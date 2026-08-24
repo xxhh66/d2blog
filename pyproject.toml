@@ -1,0 +1,17 @@
+[project]
+name = "d2blog"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aerich[toml]>=0.10.0",
+    "fastapi>=0.141.1",
+    "tortoise-orm[asyncpg]>=1.1.8",
+    "uvicorn>=0.52.4",
+]
+
+[tool.tortoise]
+tortoise_orm = "app.core.config.TORTOISE_ORM"
+location = "./migrations"
+src_folder = "./."
