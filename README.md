@@ -26,6 +26,12 @@ uv --version
 
 ```
 
+> uv 是由 Astral 公司开发的一款用 Rust 编写的 Python 包管理器和环境管理器，主要目标是提供比现有工具快 10-100 倍的性能，同时保持简单直观的用户体验。
+>
+> uv 可以替代 pip、virtualenv、pip-tools、pyenv 等工具，提供依赖管理、虚拟环境创建、Python 版本管理等一站式服务。
+>
+> uv add 管理项目依赖：项目下 `.venv\Lib\site‑packages`，也就是本项目虚拟环境内部。
+
 + `uv`与`uvicorn`区别
 
 **没有父子关系，互不依赖**：uvicorn 是 Python 库；uv 是独立 Rust 写的工具。
@@ -144,3 +150,110 @@ uv run aerich init -t app.core.config.TORTOISE_ORM
 # 运行代码
  uv run python .\start.py         
 ```
+
+### 1.2 静态配置`.env`
+
+**（1）创建`d2blog/.env`文件**
+
+```bash
+DATABASE_URL=postgres://postgres:123456@10.10.10.7:5432/fastapi
+```
+
+**（2）修改`d2blog/app/core/config.py`文件**
+
+```python
+from pydantic_settings import BaseSettings,SettingsConfigDict
+
+class Settings(BaseSettings):
+    DATABASE_URL: str=""
+
+    model_config = SettingsConfigDict(env_file=".env",env_file_encoding="utf-8")
+
+settings = Settings()
+# V3
+TORTOISE_ORM = {
+    "connections": {"default": settings.DATABASE_URL},
+    "apps": {
+        "models": {
+            "models": ["app.models", "aerich.models"],
+            "default_connection": "default",
+        },
+    },
+}
+```
+
+项目添加`pydantic_settings`
+
+```bash
+uv add pydantic_settings
+```
+
+**（3）创建数据库`d2blog/app/core/config.py`文件**
+
++ [postgres安装包链接](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads)
+
+```bash
+postgres://postgres:123456@127.0.0.1:5432/postgres
+  ①        ②       ③       ④       ⑤       ⑥
+
+① 协议     ② 用户名  ③ 密码    ④ 主机    ⑤ 端口   ⑥ 数据库名
+```
+
+![image-20260829103732868](assets/image-20260829103732868.png)
+
++ 可视化工具：`DBeaver`、`Navicat Premium`
+
+![image-20260829095539418](assets/image-20260829095539418.png)
+
+### 1.3 注册
+
+
+
+### 1.4 jwt
+
+
+
+### 1.5 登陆
+
+
+
+### 1.6 认证
+
+
+
+### 1.7 refresh_token
+
+
+
+### 1.8 异常处理
+
+
+
+### 1.9 博客相关模型定义
+
+
+
+### 1.10 实现分类管理接口
+
+
+
+### 1.11 标签管理接口
+
+
+
+### 1.12 文章创建接口
+
+
+
+### 1.13 文章创建与删除接口
+
+
+
+
+
+### 1. 参考
+
+1. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)
+2. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
+
+3. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
