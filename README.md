@@ -467,6 +467,105 @@ def get_auth_service() -> AuthService:
     return AuthService()
 ```
 
++ 数据库模型`app/models/user.py`
+
+创建一个用户表，
+
+```
+uv run aerich migrate
+uv run aerich upgrade
+```
+
+定义表的结构，包括字段类型、约束、索引、表配置等信息，使用`tortoise`映射到`PostgreSQL`数据库,实现数据库迁移。
+
+```python
+from tortoise import Model,fields
+
+
+class User(Model):
+    email= fields.CharField(max_length=128, null=False,db_index=True,description="邮箱")
+    password  =fields.CharField(max_length=128,null=False,db_index=True,description="密码")
+
+    is_deleted = fields.BooleanField(default=False,null=False,description="是否删除")
+    created_at = fields.DatetimeField(auto_now_add=True,null=False,db_index=True,descriptions="创建时间")
+    updated_at = fields.DatetimeField(auto_now_add=True,null=False,descriptions="更新时间")
+
+    class Meta:
+        table = 't_user'
+        table_description = '用户表'
+```
+
+并在`app/models/__init__.py`添加，
+
+```python
+from .user import User
+```
+
++ 请求响应模型`app/schemas/user.py`
+
+
+
+```python
+from pydantic import BaseModel, EmailStr, Field
+
+
+class RegisterParam(BaseModel):
+    email: EmailStr=Field(...,description="邮箱",max_length=128)
+    password:str = Field(...,description="密码",max_length=20,min_length=6)
+    code:str = Field(...,d
+```
+
++ 创建路由`app/routers/auth.py`
+
+```python
+@router.post("/register", response_model=ApiResult[bool])
+async def register(param: RegisterParam,
+                          auth_service: Annotated[AuthService, Depends(deps.get_auth_service)]):
+    return ApiResult.success(await auth_service.register(param))
+```
+
++ 注册逻辑`app/services/auth.py`
+
+```python
+    # 注册
+    async def register(self, param: RegisterParam):
+        """
+        用户注册逻辑。
+        Args:
+            param: 注册参数（包含 email, code, password 等）
+        Returns:
+            bool: 注册成功返回 True
+        Raises:
+            HTTPException 400: 验证码过期或错误
+            HTTPException 400: 用户已存在
+        Process:
+            1. 验证验证码（从缓存中获取并比对）
+            2. 检查用户是否已存在
+            3. 加密密码
+            4. 创建用户记录
+            5. 返回成功
+        """
+        # 从缓存中获取该邮箱的验证码记录
+        verify_code_dict = verify_code_cache.get(param.email)
+        # 检查验证码是否存在
+        if not verify_code_dict:
+            raise HTTPException(status_code=400,detail='验证码过期')
+        # 对比验证码是否正确
+        if verify_code_dict["code"] != param.code:
+            raise HTTPException(status_code=400,detail="验证码过期或不正确")
+        # 检查用户是否已经存在
+        user = await User.get_or_none(email=param.email,is_deleted=False)
+        if user:
+            raise HTTPException(status_code=400,detail="用户已存在")
+        # 密码通过哈希加密
+        hashed_password = pwd_util.get_password_hash(param.password)
+        user_data = param.model_dump()
+        user_data['password'] = hashed_password
+
+        await User.create(**user_data)
+        return True
+```
+
 
 
 ### 1.4 jwt
