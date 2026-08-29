@@ -214,7 +214,7 @@ postgres://postgres:123456@127.0.0.1:5432/postgres
 uv add cachetools
 ```
 
-增加`app/schemas/common.py`下缓存功能
++ 增加`app/schemas/common.py`下缓存功能
 
 ```python
 """缓存模块。
@@ -252,7 +252,219 @@ class CommonCache(Generic[T]):
 
 
 # 验证码缓存：最多保存 100 个验证码记录，3 分钟自动过期。
-verify_code_cache = TTLCache(maxsize=100, ttl=60 * 3)
+verify_code_cache = CommonCache(maxsize=100, ttl=60 * 3)
+```
+
+`cachetools`包下的`TTLCache` = **带过期时间的内存字典缓存**，全部数据存在内存，进程重启缓存全部丢失。
+
+①`maxsize`：缓存最大 key 数量，超过后自动淘汰 LRU（最近最少使用）条目
+
+②`ttl`：每条数据存活时间，**单位秒**，到期自动失效
+
++ 增加`app/utils/smtp_util.py`邮件发生`smtp`验证
+
+> 163邮箱开启smtp时，密码只显示一次！！！
+
+```python
+"""邮件发送工具。
+
+封装 SMTP 发送逻辑，简化验证码、通知类消息的发送流程。
+send_message() 被调用
+    │
+    ├─ 参数: body, to, subject
+    │
+    ├─ 步骤1: 构建邮件
+    │   ├─ MIMEText(body, "plain", "utf-8")
+    │   ├─ msg["From"] = SMTP_USER
+    │   ├─ msg["To"] = to
+    │   └─ msg["Subject"] = subject
+    │
+    ├─ 步骤2: 连接服务器
+    │   └─ SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+    │
+    ├─ 步骤3: 登录认证
+    │   └─ server.login(SMTP_USER, SMTP_PASS)
+    │
+    ├─ 步骤4: 发送邮件
+    │   └─ server.sendmail(SMTP_USER, to, msg.as_string())
+    │
+    ├─ 步骤5: 断开连接
+    │   └─ server.quit()
+    │
+    └─ 返回 (成功或抛出异常)
+"""
+
+"""
+邮件发送工具。
+
+封装 SMTP 发送逻辑，简化验证码、通知类消息的发送流程。
+"""
+
+import smtplib
+from email.mime.text import MIMEText
+
+from app.core.config import settings
+
+
+def send_message(body: str, to: str, subject: str):
+    """发送文本邮件。
+
+    Args:
+        body: 邮件正文内容（支持中文）
+        to: 收件人邮箱地址（支持单个收件人，多个需用逗号分隔）
+        subject: 邮件主题
+    
+    Returns:
+        None: 发送成功则无返回，失败则抛出异常
+    
+    Raises:
+        SMTPAuthenticationError: 认证失败（用户名/密码错误）
+        SMTPRecipientsRefused: 收件人被拒绝
+        SMTPServerDisconnected: 服务器连接断开
+        Exception: 其他SMTP相关异常
+    """
+    
+    # ========== 第一步：构建邮件内容 ==========
+    # MIMEText 用于构造纯文本格式的邮件
+    # 参数说明：
+    #   - body: 邮件正文内容
+    #   - "plain": 邮件格式为纯文本（text/plain），非HTML
+    #   - "utf-8": 字符编码，支持中文等非ASCII字符
+    msg = MIMEText(body, "plain", "utf-8")
+    
+    # 设置邮件头信息（类似信封上的地址）
+    msg["From"] = settings.SMTP_USER        # 发件人地址（配置中获取）
+    msg["To"] = to                          # 收件人地址（函数参数传入）
+    msg["Subject"] = subject                # 邮件主题（函数参数传入）
+    
+    # ========== 第二步：连接 SMTP 服务器 ==========
+    # SMTP_SSL: 使用 SSL 加密连接（端口通常是 465）
+    # 参数说明：
+    #   - settings.SMTP_SERVER: SMTP 服务器地址（如 smtp.qq.com）
+    #   - settings.SMTP_PORT: SMTP 服务器端口（SSL 一般为 465）
+    # 
+    # 注意：如果使用 TLS（端口 587），则使用 smtplib.SMTP() + server.starttls()
+    server = smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT)
+    
+    # ========== 第三步：登录 SMTP 服务器 ==========
+    # 使用邮箱账号和密码（或授权码）进行身份验证
+    # 参数说明：
+    #   - settings.SMTP_USER: 邮箱账号（如 your_email@qq.com）
+    #   - settings.SMTP_PASS: 密码或授权码（注意：QQ邮箱需使用授权码）
+    server.login(settings.SMTP_USER, settings.SMTP_PASS)
+    
+    # ========== 第四步：发送邮件 ==========
+    # sendmail 参数说明：
+    #   - 第一个参数: 发件人地址（必须与登录账号一致）
+    #   - 第二个参数: 收件人地址（可以是字符串或列表）
+    #   - 第三个参数: 邮件内容（转为字符串格式）
+    server.sendmail(settings.SMTP_USER, to, msg.as_string())
+    
+    # ========== 第五步：断开连接 ==========
+    # 优雅地关闭与 SMTP 服务器的连接，释放资源
+    server.quit()
+```
+
++ 增加认证逻辑`app/services/auth.py`
+
+  > 负责向用户发送验证码，并限制发送次数；
+
+  ```python
+  """认证与验证码相关逻辑。
+  
+  负责向用户发送邮箱验证码，并限制重发频率，避免恶意刷验证码或重复发送。
+  """
+  
+  import random
+  from datetime import datetime, timedelta
+  
+  from fastapi import HTTPException
+  
+  from app.core.caches import verify_code_cache
+  from app.utils import smtp_util
+  
+  
+  class AuthService:
+      """认证服务，封装验证码发送等基础认证能力。"""
+  
+      async def send_verify_code(self, email: str):
+          """发送邮箱验证码，并校验是否在冷却期内。"""
+          # 如果同一邮箱最近已发送验证码，则根据创建时间判断是否还在冷却中。
+          verify_code_dict = verify_code_cache.get(email)
+          if verify_code_dict:
+              one_minutes = timedelta(minutes=1)
+              if verify_code_dict.get("created_at") + one_minutes > datetime.now():
+                  raise HTTPException(status_code=400, detail="验证码已发送，请稍后再试")
+  
+          # 生成 6 位随机数字验证码，并保存到缓存，便于后续校验逻辑复用。
+          code = "".join(random.choices("0123456789", k=6))
+          now = datetime.now()
+          verify_code_cache.set(email, {"code": code, "created_at": now})
+  
+          try:
+              # 发送邮件时，消息内容中说明验证码有效时间，便于用户及时填写。
+              smtp_util.send_message(f"您的验证码是：{code},将在3分钟内过期", email, "验证码")
+          except Exception:
+              raise HTTPException(status_code=400, detail="系统繁忙，请稍后重试")
+  
+          return True
+  ```
+
+　
+
++ 增加路由`app/services/auth.py`|`app/core/deps.py`
+
+> APIRouter创建各模块子路由。
+
+[Fastapi依赖项](https://fastapi.tiangolo.com/zh/tutorial/dependencies/)
+
+```python
+"""认证相关路由。
+
+对外暴露与邮箱验证码发送相关的接口，属于用户认证模块的入口。
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from fastapi.params import Query
+from pydantic import EmailStr
+
+from app.core import deps
+from app.schemas.common import ApiResult
+from app.services.auth import AuthService
+
+# 路由分组用于在 OpenAPI 文档中归类展示用户认证相关接口。
+router = APIRouter(tags=["用户认证"])
+
+
+@router.get("/get_verify_code")
+async def get_verify_code(
+    email: Annotated[EmailStr, Query()],
+    auth_service: Annotated[AuthService, Depends(deps.get_auth_service)],
+):
+    """按邮箱发送验证码，并返回统一的 API 响应结构。"""
+    return ApiResult.success(await auth_service.send_verify_code(email))
+```
+
+注入项`app/core/deps.py`
+
+```python
+"""依赖注入辅助模块。
+
+用于为路由函数提供服务实例，保持控制器层简洁，并且可复用依赖管理逻辑。
+"""
+
+from app.services.auth import AuthService
+
+
+def get_auth_service() -> AuthService:
+    """创建并返回认证服务实例。
+
+    在 FastAPI 的 Depends 中使用时，每次请求都可以获取一个新的服务对象，
+    方便在路由层按需执行认证相关逻辑。
+    """
+    return AuthService()
 ```
 
 
@@ -301,7 +513,7 @@ verify_code_cache = TTLCache(maxsize=100, ttl=60 * 3)
 
 ### 1. 参考
 
+1. [Fastapi依赖项](https://fastapi.tiangolo.com/zh/tutorial/dependencies/)
 1. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)
-2. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
-
+3. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
 3. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)

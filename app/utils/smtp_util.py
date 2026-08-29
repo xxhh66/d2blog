@@ -14,15 +14,17 @@ def send_message(body: str, to: str, subject: str):
 
     body 是邮件正文内容，to 是收件人地址，subject 是邮件主题。
     """
-    # 将正文构造成 MIME 文本，指定 UTF-8 编码以支持中文内容。
+    # MIMEText 将正文构造成 MIME 文本，指定 UTF-8 编码以支持中文内容。
     msg = MIMEText(body, "plain", "utf-8")
-    msg["From"] = settings.SMTP_USER
-    msg["To"] = to
-    msg["Subject"] = subject
 
-    # 通过 SSL 连接 SMTP 服务器，并执行登录和邮件发送操作。
+    msg["From"] = settings.SMTP_USER        # 发件人地址
+    msg["To"] = to                          # 收件人地址
+    msg["Subject"] = subject                # 邮件主题
+
+    # 通过 SSL 连接 SMTP 服务器，并执行登录和邮件发送操作， SMTP_SSL: 使用 SSL 加密连接（端口通常是 465）
     server = smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT)
     server.login(settings.SMTP_USER, settings.SMTP_PASS)
-
+    # 发送邮件
     server.sendmail(settings.SMTP_USER, to, msg.as_string())
+    # 服务退出
     server.quit()

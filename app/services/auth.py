@@ -27,7 +27,7 @@ class AuthService:
         # 生成 6 位随机数字验证码，并保存到缓存，便于后续校验逻辑复用。
         code = "".join(random.choices("0123456789", k=6))
         now = datetime.now()
-        verify_code_cache.get(email, {"code": code, "created_at": now})
+        verify_code_cache.set(email, {"code": code, "created_at": now})
 
         try:
             # 发送邮件时，消息内容中说明验证码有效时间，便于用户及时填写。
