@@ -507,11 +507,7 @@ def get_auth_service() -> AuthService:
 
 ### 1.13 文章创建与删除接口
 
-
-
-
-
-### 1. 参考
+## 3. 参考
 
 1. [Fastapi依赖项](https://fastapi.tiangolo.com/zh/tutorial/dependencies/)
 1. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)

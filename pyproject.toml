@@ -6,11 +6,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aerich[toml]>=0.10.0",
+    "bcrypt>=5.0.0",
     "cachetools>=7.1.7",
     "fastapi>=0.141.1",
     "pydantic-settings>=2.15.0",
     "pydantic[email]>=2.13.4",
     "tortoise-orm[asyncpg]>=1.1.8",
+    "tzdata>=2026.3",
     "uvicorn>=0.52.4",
 ]
 

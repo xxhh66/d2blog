@@ -9,8 +9,9 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 
 from app.core.caches import verify_code_cache
-from app.utils import smtp_util
-
+from app.schemas.user import RegisterParam
+from app.utils import smtp_util, pwd_util
+from app.models import User
 
 class AuthService:
     """认证服务，封装验证码发送等基础认证能力。"""
@@ -35,4 +36,24 @@ class AuthService:
         except Exception:
             raise HTTPException(status_code=400, detail="系统繁忙，请稍后重试")
 
+        return True
+
+    # 注册
+    async def register(self, param: RegisterParam):
+        # 先获取验证码
+        verify_code_dict = verify_code_cache.get(param.email)
+        if not verify_code_dict:
+            raise HTTPException(status_code=400,detail='验证码过期')
+        if verify_code_dict["code"] != param.code:
+            raise HTTPException(status_code=400,detail="验证码过期或不正确")
+
+        user = await User.get_or_none(email=param.email,is_deleted=False)
+        if user:
+            raise HTTPException(status_code=400,detail="用户已存在")
+
+        hashed_password = pwd_util.get_password_hash(param.password)
+        user_data = param.model_dump()
+        user_data['password'] = hashed_password
+
+        await User.create(**user_data)
         return True

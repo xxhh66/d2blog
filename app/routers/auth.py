@@ -11,6 +11,7 @@ from pydantic import EmailStr
 
 from app.core import deps
 from app.schemas.common import ApiResult
+from app.schemas.user import RegisterParam
 from app.services.auth import AuthService
 
 # 路由分组用于在 OpenAPI 文档中归类展示用户认证相关接口。
@@ -24,3 +25,8 @@ async def get_verify_code(
 ):
     """按邮箱发送验证码，并返回统一的 API 响应结构。"""
     return ApiResult.success(await auth_service.send_verify_code(email))
+
+@router.post("/register", response_model=ApiResult[bool])
+async def register(param: RegisterParam,
+                          auth_service: Annotated[AuthService, Depends(deps.get_auth_service)]):
+    return ApiResult.success(await auth_service.register(param))
