@@ -9,10 +9,10 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 
 from app.core.caches import verify_code_cache
-from app.schemas.user import RegisterParam
-from app.utils import smtp_util, pwd_util
+from app.core.config import settings
+from app.schemas.auth import RegisterParam, LoginParam, LoginResult
+from app.utils import smtp_util, pwd_util,jwt_util
 from app.models import User
-
 EMAIL_LOCKS={}
 VERIFY_CODE_LOCK = asyncio.Lock()
 
@@ -84,3 +84,30 @@ class AuthService:
 
         await User.create(**user_data)
         return True
+
+    async def login(self,param:LoginParam)->LoginResult:
+        # 1. 将用户查出
+        user = await User.get_or_none(email=param.email,is_deleted=False)
+        if not user:
+            raise HTTPException(status_code=400,detail="用户不存在")
+        # 2. 验证密码
+        if not pwd_util.verify_password(param.password, user.password):
+            raise HTTPException(status_code=400, detail="密码错误")
+        # 3. 生成token
+        user_data = {
+            'sub':str(user.pk),
+            'email':user.email
+        }
+        access_token = jwt_util.create_access_token(user_data)
+        refresh_token = jwt_util.create_refresh_token(user_data)
+        seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
+        return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
+
+
+
+
+
+
+
+
+

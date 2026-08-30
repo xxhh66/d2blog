@@ -501,7 +501,7 @@ class User(Model):
 from .user import User
 ```
 
-+ 请求响应模型`app/schemas/user.py`
++ 请求响应模型`app/schemas/auth.py`
 
 
 
@@ -570,9 +570,202 @@ async def register(param: RegisterParam,
 
 ### 1.4 jwt
 
+`JWT` （`JSON Web Token`） 是目前最流行的跨域认证解决方案，是一种基于 `Token` 的认证授权机制。 从` JWT` 的全称可以看出，`JWT` 本身也是 `Token`，一种规范化之后的 `JSON` 结构的 `Token`。
 
+JWT 自身包含了身份验证所需要的所有信息，因此，我们的服务器不需要存储 Session 信息。这显然增加了系统的可用性和伸缩性，大大减轻了服务端的压力。
+
+可以看出，**JWT 更符合设计 RESTful API 时的「Stateless（无状态）」原则** 。
+
+`JWT` 本质上就是一组字串，通过（`.`）切分成三个为 Base64 编码的部分：
+
+- **Header（头部）** : 描述 JWT 的元数据，定义了生成签名的算法以及 `Token` 的类型。Header 被 Base64Url 编码后成为 JWT 的第一部分。
+- **Payload（载荷）** : 用来存放实际需要传递的数据，包含声明（Claims），如`sub`（subject，主题）、`jti`（JWT ID）。Payload 被 Base64Url 编码后成为 JWT 的第二部分。
+- **Signature（签名）**：服务器通过 Payload、Header 和一个密钥(Secret)使用 Header 里面指定的签名算法（默认是 HMAC SHA256）生成。生成的签名会成为 JWT 的第三部分。
+
+![JWT 组成](assets/jwt-composition.png)
+
+**Header** 通常由两部分组成：
+
+- `typ`（Type）：令牌类型，也就是 JWT。
+- `alg`（Algorithm）：签名算法，比如 HS256。
+
+示例：
+
+
+
+```json
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+```
+
+JSON 形式的 Header 被转换成 Base64 编码，成为 JWT 的第一部分。
+
+**Payload** 也是 JSON 格式数据，其中包含了 Claims(声明，包含 JWT 的相关信息)。
+
+Claims 分为三种类型：
+
+- **Registered Claims（注册声明）**：预定义的一些声明，建议使用，但不是强制性的。
+- **Public Claims（公有声明）**：JWT 签发方可以自定义的声明，但是为了避免冲突，应该在 [IANA JSON Web Token Registry](https://www.iana.org/assignments/jwt/jwt.xhtml) 中定义它们。
+- **Private Claims（私有声明）**：JWT 签发方因为项目需要而自定义的声明，更符合实际项目场景使用。
+
+下面是一些常见的注册声明：
+
+- `iss`（issuer）：JWT 签发方。
+- `iat`（issued at time）：JWT 签发时间。
+- `sub`（subject）：JWT 主题。
+- `aud`（audience）：JWT 接收方。
+- `exp`（expiration time）：JWT 的过期时间。
+- `nbf`（not before time）：JWT 生效时间，早于该定义的时间的 JWT 不能被接受处理。
+- `jti`（JWT ID）：JWT 唯一标识。
+
+示例：
+
+```json
+{
+  "uid": "ff1212f5-d8d1-4496-bf41-d2dda73de19a",
+  "sub": "1234567890",
+  "name": "John Doe",
+  "exp": 15323232,
+  "iat": 1516239022,
+  "scope": ["admin", "user"]
+}
+```
+
+Payload 部分默认是不加密的，**一定不要将隐私信息存放在 Payload 当中！！！**JSON 形式的 Payload 被转换成 Base64 编码，成为 JWT 的第二部分。
+
+**Signature** 部分是对前两部分的签名，作用是防止 JWT（主要是 payload） 被篡改。
+
+这个签名的生成需要用到：
+
+- Header + Payload。
+- 存放在服务端的密钥(一定不要泄露出去)。
+- 签名算法。
+
+签名的计算公式如下：
+
+
+
+```plain
+HMACSHA256(
+  base64UrlEncode(header) + "." +
+  base64UrlEncode(payload),
+  secret)
+```
+
+算出签名以后，把 Header、Payload、Signature 三个部分拼成一个字符串，每个部分之间用"点"（`.`）分隔，这个字符串就是 JWT 
+
+![image-20260830145838791](assets/image-20260830145838791.png)
 
 ### 1.5 登陆
+
++ 服务修改
+
+① 增加`pydantic`请求数据`app/schemas/auth.py`
+
+```python
+class LoginParam(BaseModel):
+    email:EmailStr = Field(...,description="邮箱",max_length=128)
+    password:str = Field(...,description="密码",max_length=20,min_length=6)
+
+class LoginResult(BaseModel):
+    access_token:str = Field(...,description="访问令牌")
+    expires_in:int = Field(...,description="令牌有效期")
+    refresh_token:str = Field(...,description="刷新令牌")
+```
+
+②新增`jwt`   `app/utils/jwt_util.py`
+
+```python
+import base64
+from datetime import datetime, UTC, timedelta
+from typing import Any
+from uuid import uuid4
+
+import jwt
+from fastapi import HTTPException
+
+from app.core.config import Settings, settings
+
+
+def create_token(body:dict[str,Any]):
+    return jwt.encode(body, str(uuid4()), algorithm="HS256")
+
+def create_access_token(body: dict[str, Any]) -> str:
+    payload = body.copy()
+
+    now = datetime.now(UTC)
+
+    payload.update({
+        "iss": settings.JWT_ISS,
+        "aud": settings.JWT_AUD,
+        "exp": now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        "nbf": now,
+        "iat": now,
+        "jti": str(uuid4()),
+        "typ": "access"
+    })
+
+    return jwt.encode(payload, settings.SECURITY_KEY, algorithm="HS256")
+
+def create_refresh_token(body: dict[str, Any]) -> str:
+    payload = body.copy()
+
+    now = datetime.now(UTC)
+
+    payload.update({
+        "iss": settings.JWT_ISS,
+        "aud": settings.JWT_AUD,
+        "exp": now + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+        "nbf": now,
+        "iat": now,
+        "jti": str(uuid4()),
+        "typ": "refresh"
+    })
+
+    return jwt.encode(payload, settings.SECURITY_KEY, algorithm="HS256")
+
+def verify_token(token: str, token_type: str = 'access') -> dict[str, Any]:
+    payload = jwt.decode(token, settings.SECURITY_KEY, algorithms=["HS256"], audience=settings.JWT_AUD, issuer=settings.JWT_ISS)
+    if not payload:
+        raise HTTPException(status_code=401, detail="无效的token")
+    if payload.get("typ") != token_type:
+        raise HTTPException(status_code=401, detail="无效的token")
+    return payload
+
+```
+
+③新增服务`app/services/auth.py`
+
+```python
+    async def login(self,param:LoginParam)->LoginResult:
+        # 1. 将用户查出
+        user = await User.get_or_none(email=param.email,is_deleted=False)
+        if not user:
+            raise HTTPException(status_code=400,detail="用户不存在")
+        # 2. 验证密码
+        if not pwd_util.verify_password(param.password, user.password):
+            raise HTTPException(status_code=400, detail="密码错误")
+        # 3. 生成token
+        user_data = {
+            'sub':str(user.pk),
+            'email':user.email
+        }
+        access_token = jwt_util.create_access_token(user_data)
+        refresh_token = jwt_util.create_refresh_token(user_data)
+        seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
+        return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
+```
+
++ 路由修改 `app/routers/auth.py`
+
+```python
+@router.post("/login")
+async def login(param:LoginParam,
+                auth_service:Annotated[AuthService,Depends(deps.get_auth_service)]):
+    return ApiResult.success(await auth_service.login(param))
+```
 
 
 
@@ -612,3 +805,4 @@ async def register(param: RegisterParam,
 1. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)
 3. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
 3. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
+3. [JWT 基础概念详解](https://javaguide.cn/system-design/security/jwt-intro.html#%E4%BB%80%E4%B9%88%E6%98%AF-jwt)

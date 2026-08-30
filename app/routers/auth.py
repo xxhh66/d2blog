@@ -11,7 +11,7 @@ from pydantic import EmailStr
 
 from app.core import deps
 from app.schemas.common import ApiResult
-from app.schemas.user import RegisterParam
+from app.schemas.auth import RegisterParam, LoginResult, LoginParam
 from app.services.auth import AuthService
 
 # 路由分组用于在 OpenAPI 文档中归类展示用户认证相关接口。
@@ -30,3 +30,8 @@ async def get_verify_code(
 async def register(param: RegisterParam,
                           auth_service: Annotated[AuthService, Depends(deps.get_auth_service)]):
     return ApiResult.success(await auth_service.register(param))
+
+@router.post("/login")
+async def login(param:LoginParam,
+                auth_service:Annotated[AuthService,Depends(deps.get_auth_service)]):
+    return ApiResult.success(await auth_service.login(param))

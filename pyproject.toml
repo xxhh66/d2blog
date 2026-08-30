@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "pydantic-settings>=2.15.0",
     "pydantic[email]>=2.13.4",
+    "pyjwt>=2.13.0",
     "tortoise-orm[asyncpg]>=1.1.8",
     "tzdata>=2026.3",
     "uvicorn>=0.52.4",

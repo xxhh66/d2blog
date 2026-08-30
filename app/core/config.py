@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASS: str = ""
 
+    SECURITY_KEY:str = ''
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
+    JWT_ISS:str = 'bogeblog'
+    JWT_AUD:str = 'web'
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",  # 使用项目根目录下的 .env 文件。
         env_file_encoding="utf-8",
