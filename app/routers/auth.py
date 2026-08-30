@@ -13,7 +13,7 @@ from app.core import deps
 from app.schemas.common import ApiResult
 from app.schemas.auth import RegisterParam, LoginResult, LoginParam
 from app.services.auth import AuthService
-
+from app.models import User
 # 路由分组用于在 OpenAPI 文档中归类展示用户认证相关接口。
 router = APIRouter(tags=["用户认证"])
 
@@ -35,3 +35,8 @@ async def register(param: RegisterParam,
 async def login(param:LoginParam,
                 auth_service:Annotated[AuthService,Depends(deps.get_auth_service)]):
     return ApiResult.success(await auth_service.login(param))
+
+@router.get("/test")
+async def test(user: Annotated[User, Depends(deps.get_current_user)]):
+    # return "Hello world"
+    return user.email
