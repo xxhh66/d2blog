@@ -767,9 +767,45 @@ async def login(param:LoginParam,
     return ApiResult.success(await auth_service.login(param))
 ```
 
-
-
 ### 1.6 认证
+
++ 添加新的路由
+
+```python
+@router.get("/test")
+async def test(user: Annotated[User, Depends(deps.get_current_user)]):
+    # return "Hello world"
+    return user.email
+```
+
++ 添加依赖项
+
+```python
+async def get_current_user(authorization: Annotated[str, Header()])->User:
+    if not authorization:
+        raise HTTPException(status_code=401,detail="未提供认证信息")
+
+    parts = authorization.split(" ")
+    print(parts)
+    if  len(parts) != 2:
+        raise HTTPException(status_code=400,detail="认证格式错误，请使用 'Bearer <token>'")
+
+    # 检查是否为 Bearer 类型
+    if parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="认证类型错误，请使用 'Bearer'"
+        )
+
+    try:
+        payload = jwt_util.verify_token(parts[1],'access')
+        print(payload)
+        user_id = int(payload.get('sub'))
+        return await User.get(id=user_id)
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=400, detail="无效的token")
+```
 
 
 
@@ -806,3 +842,5 @@ async def login(param:LoginParam,
 3. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
 3. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
 3. [JWT 基础概念详解](https://javaguide.cn/system-design/security/jwt-intro.html#%E4%BB%80%E4%B9%88%E6%98%AF-jwt)
+3. [Boomerang轻量化测试工具](https://boomerangapi.com/index.html)
+
