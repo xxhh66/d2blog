@@ -14,6 +14,7 @@ from app.schemas.common import ApiResult
 from app.schemas.auth import RegisterParam, LoginResult, LoginParam,RefreshTokenParam
 from app.services.auth import AuthService
 from app.models import User
+
 # 路由分组用于在 OpenAPI 文档中归类展示用户认证相关接口。
 router = APIRouter(tags=["用户认证"])
 
@@ -35,12 +36,16 @@ async def register(param: RegisterParam,
 async def login(param:LoginParam,
                 auth_service:Annotated[AuthService,Depends(deps.get_auth_service)]):
     return ApiResult.success(await auth_service.login(param))
+# v1
+# @router.get("/test")
+# async def test(user: Annotated[User, Depends(deps.get_current_user)]):
+#     # return "Hello world"
+#     return user.email
 
-@router.get("/test")
+# v2,在测试基础上添加权限
+@router.get("/test", dependencies=[Depends(deps.check_permission("test_bolg2"))])
 async def test(user: Annotated[User, Depends(deps.get_current_user)]):
-    # return "Hello world"
     return user.email
-
 @router.post("/refresh_token",response_model=ApiResult[LoginResult])
 async def refresh_token(param:RefreshTokenParam,
                         auth_service: Annotated[AuthService, Depends(deps.get_auth_service)]):

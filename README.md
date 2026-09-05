@@ -813,24 +813,124 @@ async def get_current_user(authorization: Annotated[str, Header()])->User:
 
 #### 1.7.1  refresh_token
 
++ V1版本
+
 在`app/services/auth.py`文件中增加：
 
+```python
+    async def refresh_token(self, token:str)->LoginResult:
+        payload = jwt_util.verify_token(token,'refresh')
+        if not payload:
+            raise HTTPException(status_code=400,detail="无效的token")
+        sub = payload.get('sub')
+        if not sub:
+            raise HTTPException(status_code=400,detail="无效的token")
+        user = await User.get_or_none(id=int(str(sub)), is_deleted=False)
+        if not user:
+            raise HTTPException(status_code=400,detail="用户不存在")
+        # 3. 生成token
+        user_data = {
+            "sub": str(user.pk),
+            "email": user.email
+        }
+        access_token = jwt_util.create_access_token(user_data)
+        refresh_token = jwt_util.create_refresh_token(user_data)
+        seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
+        return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
 
+```
+
+增加路由：`app/routers/auth.py`
 
 ```python
+@router.post("/refresh_token",response_model=ApiResult[LoginResult])
+async def refresh_token(token:str,
+                        auth_service: Annotated[AuthService,                     Depends(deps.get_auth_service)]):
+    return ApiResult.success(await auth_service.refresh_token(token))
+
+```
+
++ V2 版本
+
+进步一完善，在`app/schemas/auth.py`中增加
+
+```python
+# Token 刷新请求验证
+class RefreshTokenParam(BaseModel):
+    token:str = Field(...,description="刷新令牌")
+```
+
+在`app/services/auth.py`文件中增加：
+
+```python
+    async def refresh_token(self, param:RefreshTokenParam)->LoginResult:
+        payload = jwt_util.verify_token(param.token,'refresh')
+        if not payload:
+            raise HTTPException(status_code=400,detail="无效的token")
+        sub = payload.get('sub')
+        if not sub:
+            raise HTTPException(status_code=400,detail="无效的token")
+        user = await User.get_or_none(id=int(str(sub)), is_deleted=False)
+        if not user:
+            raise HTTPException(status_code=400,detail="用户不存在")
+        # 3. 生成token
+        user_data = {
+            "sub": str(user.pk),
+            "email": user.email
+        }
+        access_token = jwt_util.create_access_token(user_data)
+        refresh_token = jwt_util.create_refresh_token(user_data)
+        seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
+        return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
+```
+
+增加路由：`app/routers/auth.py`
+
+```python
+@router.post("/refresh_token")
+async def refresh_token(param:RefreshTokenParam,
+                        auth_service: Annotated[AuthService, Depends(deps.get_auth_service)]):
+    return ApiResult.success(await auth_service.refresh_token(param))
+```
+
++ Access Token 和 Refresh Token作用
+
+| 对比项       | Access Token（访问令牌）      | Refresh Token（刷新令牌）       |
+| :----------- | :---------------------------- | :------------------------------ |
+| **作用**     | **开门钥匙**——访问API资源     | **补办钥匙**——获取新的访问令牌  |
+| **有效期**   | **短**（15-60分钟）           | **长**（7-30天）                |
+| **使用频率** | **高频**（每次API请求都携带） | **低频**（仅在Token过期时使用） |
+| **存储位置** | 内存（前端状态）              | HttpOnly Cookie / 安全存储      |
+| **泄露风险** | 较高（频繁传输）              | 较低（极少传输）                |
+| **权限范围** | 访问特定资源                  | 仅用于刷新令牌                  |
+
+![image-20260905131503012](assets/image-20260905131503012.png)
+
+#### 1.7.2 权限
+
+在`app/schemas/auth.py`中添加，避免歧义将路由`deps.check_permission("test")`参数修改为了`test_blog`.
+
+```python
+def check_permission(prem:str):
+    def _check_permission(user:Annotated[User,Depends(get_current_user)]):
+        if prem!='test_blog':
+            raise HTTPException(status_code=400,detail="无权限")
+    return _check_permission
+
+
+```
+
+修改路由`app/routers/auth.py`中`@router.get("/test")`：
+
+```python
+@router.get("/test", dependencies=[Depends(deps.check_permission("test_blog"))])
+async def test(user: Annotated[User, Depends(deps.get_current_user)]):
+    return user.email
 ```
 
 
 
-增加路由：`app/routers/auth.py`
-
-
-
-
-
-#### 1.7.2 权限
-
-
+![image-20260905152610493](assets/image-20260905152610493.png)
 
 
 

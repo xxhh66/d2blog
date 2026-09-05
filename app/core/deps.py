@@ -5,7 +5,7 @@
 from typing import Annotated
 
 from fastapi import HTTPException
-from fastapi.params import Header
+from fastapi.params import Header, Depends
 
 from app.services.auth import AuthService
 from app.models import User
@@ -56,3 +56,10 @@ async def get_current_user(authorization: Annotated[str, Header()])->User:
     except Exception as e:
         print(e)
         raise HTTPException(status_code=400, detail="无效的token")
+
+def check_permission(prem:str):
+    def _check_permission(user:Annotated[User,Depends(get_current_user)]):
+        if prem!='test_blog':
+            raise HTTPException(status_code=400,detail="无权限")
+    return _check_permission
+
