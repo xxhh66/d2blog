@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from app.core.caches import verify_code_cache
 from app.core.config import settings
-from app.schemas.auth import RegisterParam, LoginParam, LoginResult
+from app.schemas.auth import RegisterParam, LoginParam, LoginResult, RefreshTokenParam
 from app.utils import smtp_util, pwd_util,jwt_util
 from app.models import User
 EMAIL_LOCKS={}
@@ -103,8 +103,8 @@ class AuthService:
         seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
         return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
 
-    async def refresh_token(self, refresh_token: str)->LoginResult:
-        payload = jwt_util.verify_token(refresh_token,'refresh')
+    async def refresh_token(self, param:RefreshTokenParam)->LoginResult:
+        payload = jwt_util.verify_token(param.token,'refresh')
         if not payload:
             raise HTTPException(status_code=400,detail="无效的token")
         sub = payload.get('sub')

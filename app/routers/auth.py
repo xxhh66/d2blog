@@ -11,7 +11,7 @@ from pydantic import EmailStr
 
 from app.core import deps
 from app.schemas.common import ApiResult
-from app.schemas.auth import RegisterParam, LoginResult, LoginParam
+from app.schemas.auth import RegisterParam, LoginResult, LoginParam,RefreshTokenParam
 from app.services.auth import AuthService
 from app.models import User
 # 路由分组用于在 OpenAPI 文档中归类展示用户认证相关接口。
@@ -42,6 +42,6 @@ async def test(user: Annotated[User, Depends(deps.get_current_user)]):
     return user.email
 
 @router.post("/refresh_token",response_model=ApiResult[LoginResult])
-async def refresh_token(token:str,
+async def refresh_token(param:RefreshTokenParam,
                         auth_service: Annotated[AuthService, Depends(deps.get_auth_service)]):
-    return ApiResult.success(await auth_service.refresh_token(token))
+    return ApiResult.success(await auth_service.refresh_token(param))
