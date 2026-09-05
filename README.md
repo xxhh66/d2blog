@@ -1,6 +1,8 @@
-# d2blog
+# 动手学FastApi框架：d2blog 博客
 
 > FastAPI实现博客后端。
+>
+> 参考视频：[2026最新FastAPI + Python + Tortoise-ORM 个人博客实战](https://www.bilibili.com/video/BV1265p65E7x/?spm_id_from=333.1387.collection.video_card.click&vd_source=e4eac2b23f9d4d0e20f0a272cd8fedd5)
 
 ## 1. 开发环境搭建
 
@@ -502,8 +504,6 @@ from .user import User
 ```
 
 + 请求响应模型`app/schemas/auth.py`
-
-
 
 ```python
 from pydantic import BaseModel, EmailStr, Field
@@ -1044,6 +1044,11 @@ myapp.add_exception_handler(Exception, exceptions.global_exception_handler)
 
 
 ### 1.9 博客相关模型定义
+
+```bash
+uv run aerich migrate
+uv run aerich upgrade
+```
 
 
 

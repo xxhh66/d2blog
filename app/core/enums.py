@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum,IntEnum
 
 
 class BlogErrorEnum(Enum):
@@ -18,3 +18,7 @@ class BlogErrorEnum(Enum):
     @property
     def err_msg(self):
         return self.value[1]
+
+class ArticleStatusEnum(IntEnum):
+    UB_PUBLISHED = 0
+    PUBLISHED = 1
