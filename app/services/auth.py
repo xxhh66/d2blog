@@ -10,6 +10,8 @@ from fastapi import HTTPException
 
 from app.core.caches import verify_code_cache
 from app.core.config import settings
+from app.core.enums import BlogErrorEnum
+from app.core.exceptions import BlogException
 from app.schemas.auth import RegisterParam, LoginParam, LoginResult, RefreshTokenParam
 from app.utils import smtp_util, pwd_util,jwt_util
 from app.models import User
@@ -89,10 +91,12 @@ class AuthService:
         # 1. 将用户查出
         user = await User.get_or_none(email=param.email,is_deleted=False)
         if not user:
-            raise HTTPException(status_code=400,detail="用户不存在")
+            # raise HTTPException(status_code=400,detail="用户不存在")
+            raise BlogException(BlogErrorEnum.USER_NOT_FOUND_OR_PASSWORD_ERROR)
         # 2. 验证密码
         if not pwd_util.verify_password(param.password, user.password):
-            raise HTTPException(status_code=400, detail="密码错误")
+            # raise HTTPException(status_code=400, detail="密码错误")
+            raise BlogException(BlogErrorEnum.USER_NOT_FOUND_OR_PASSWORD_ERROR)
         # 3. 生成token
         user_data = {
             'sub':str(user.pk),

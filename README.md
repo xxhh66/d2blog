@@ -936,6 +936,111 @@ async def test(user: Annotated[User, Depends(deps.get_current_user)]):
 
 ### 1.8 异常处理
 
++ 增加文件`app/core/enums.py`，自定义错误代码
+
+```python
+from enum import Enum
+
+
+class BlogErrorEnum(Enum):
+    VALIDATE_ERROR = (400, "参数错误")
+    ACCESS_TOKEN_INVALID = (401, "访问令牌无效")
+    ACCESS_TOKEN_EXPIRE = (401, "访问令牌过期")
+    SYSTEM_ERROR  = (500, "系统错误")
+
+    #用户相关
+    USER_NOT_FOUND_OR_PASSWORD_ERROR=(1001,"用户不存在或密码错误")
+    USER_NOT_FOUND=(1002,"用户不存在")
+    USER_EXISTS=(1003,"用户已存在")
+
+    @property
+    def err_code(self):
+        return self.value[0]
+    @property
+    def err_msg(self):
+        return self.value[1]
+
+```
+
++ 新增`app/core/exceptions.py`异常处理代码
+
+```python
+from fastapi.exceptions import RequestValidationError
+from starlette.responses import JSONResponse
+
+from app.core.enums import BlogErrorEnum
+from app.schemas.common import ApiResult
+
+
+class BlogException(Exception):
+    def __init__(self, err: str | BlogErrorEnum, code: int=500):
+        if isinstance(err, BlogErrorEnum):
+            self.msg = err.err_msg
+            self.code = err.err_code
+        else:
+            self.msg = err
+            self.code = code
+
+        super().__init__(self.msg)
+async def blog_exception_handler(request, exc: BlogException):
+    return JSONResponse(
+        status_code=200,
+        content=ApiResult(code=exc.code, msg=exc.msg).model_dump(),
+    )
+async def validation_exception_handler(request,exc:RequestValidationError):
+    return JSONResponse(
+        status_code=200,
+        content=ApiResult(
+            code=BlogErrorEnum.VALIDATE_ERROR.err_code,
+            msg=exc.errors()[0].get('msg')
+        ).model_dump(),
+    )
+
+async def global_exception_handler(request, exc: Exception):
+    return JSONResponse(
+        status_code=200,
+        content=ApiResult(
+            code=BlogErrorEnum.SYSTEM_ERROR.err_code,
+            msg=BlogErrorEnum.SYSTEM_ERROR.err_msg
+        ).model_dump(),
+    )
+
+```
+
++ `app/main.py`注册异常
+
+```python
+# 注册异常
+myapp.add_exception_handler(exceptions.BlogException, exceptions.blog_exception_handler) # type: ignore
+myapp.add_exception_handler(RequestValidationError, exceptions.validation_exception_handler) # type: ignore
+myapp.add_exception_handler(Exception, exceptions.global_exception_handler)
+
+```
+
++ 修改`app/services/auth.py`登陆服务中的异常`HTTPException`--> `BlogException`
+
+```python
+    async def login(self,param:LoginParam)->LoginResult:
+        # 1. 将用户查出
+        user = await User.get_or_none(email=param.email,is_deleted=False)
+        if not user:
+            # raise HTTPException(status_code=400,detail="用户不存在")
+            raise BlogException(BlogErrorEnum.USER_NOT_FOUND_OR_PASSWORD_ERROR)
+        # 2. 验证密码
+        if not pwd_util.verify_password(param.password, user.password):
+            # raise HTTPException(status_code=400, detail="密码错误")
+            raise BlogException(BlogErrorEnum.USER_NOT_FOUND_OR_PASSWORD_ERROR)
+        # 3. 生成token
+        user_data = {
+            'sub':str(user.pk),
+            'email':user.email
+        }
+        access_token = jwt_util.create_access_token(user_data)
+        refresh_token = jwt_util.create_refresh_token(user_data)
+        seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
+        return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
+```
+
 
 
 ### 1.9 博客相关模型定义
@@ -964,4 +1069,5 @@ async def test(user: Annotated[User, Depends(deps.get_current_user)]):
 3. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
 3. [JWT 基础概念详解](https://javaguide.cn/system-design/security/jwt-intro.html#%E4%BB%80%E4%B9%88%E6%98%AF-jwt)
 3. [Boomerang轻量化测试工具](https://boomerangapi.com/index.html)
+7. [处理错误教程](https://fastapi.tiangolo.com/zh/tutorial/handling-errors/#raise-an-httpexception-in-your-code)
 
