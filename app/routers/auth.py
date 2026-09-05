@@ -40,3 +40,8 @@ async def login(param:LoginParam,
 async def test(user: Annotated[User, Depends(deps.get_current_user)]):
     # return "Hello world"
     return user.email
+
+@router.post("/refresh_token",response_model=ApiResult[LoginResult])
+async def refresh_token(token:str,
+                        auth_service: Annotated[AuthService, Depends(deps.get_auth_service)]):
+    return ApiResult.success(await auth_service.refresh_token(token))

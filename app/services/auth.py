@@ -103,7 +103,25 @@ class AuthService:
         seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
         return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
 
-
+    async def refresh_token(self, refresh_token: str)->LoginResult:
+        payload = jwt_util.verify_token(refresh_token,'refresh')
+        if not payload:
+            raise HTTPException(status_code=400,detail="无效的token")
+        sub = payload.get('sub')
+        if not sub:
+            raise HTTPException(status_code=400,detail="无效的token")
+        user = await User.get_or_none(id=int(str(sub)), is_deleted=False)
+        if not user:
+            raise HTTPException(status_code=400,detail="用户不存在")
+        # 3. 生成token
+        user_data = {
+            "sub": str(user.pk),
+            "email": user.email
+        }
+        access_token = jwt_util.create_access_token(user_data)
+        refresh_token = jwt_util.create_refresh_token(user_data)
+        seconds = int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds())
+        return LoginResult(access_token=access_token, refresh_token=refresh_token, expires_in=seconds)
 
 
 

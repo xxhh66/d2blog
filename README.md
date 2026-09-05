@@ -809,7 +809,28 @@ async def get_current_user(authorization: Annotated[str, Header()])->User:
 
 
 
-### 1.7 refresh_token
+### 1.7 refresh_token、权限
+
+#### 1.7.1  refresh_token
+
+在`app/services/auth.py`文件中增加：
+
+
+
+```python
+```
+
+
+
+增加路由：`app/routers/auth.py`
+
+
+
+
+
+#### 1.7.2 权限
+
+
 
 
 

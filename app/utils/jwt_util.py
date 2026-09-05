@@ -48,8 +48,10 @@ def create_refresh_token(body: dict[str, Any]) -> str:
 
 def verify_token(token: str, token_type: str = 'access') -> dict[str, Any]:
     payload = jwt.decode(token, settings.SECURITY_KEY, algorithms=["HS256"], audience=settings.JWT_AUD, issuer=settings.JWT_ISS)
+    # 验证token是否过期
     if not payload:
         raise HTTPException(status_code=401, detail="无效的token")
+    # 验证token类型
     if payload.get("typ") != token_type:
         raise HTTPException(status_code=401, detail="无效的token")
     return payload
