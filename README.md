@@ -1050,6 +1050,82 @@ uv run aerich migrate
 uv run aerich upgrade
 ```
 
++ blog 数据库、表模型 `app/models/blog.py`
+
+```python
+from email.policy import default
+
+from tortoise import Model,fields
+
+from app.core.enums import ArticleStatusEnum
+from app.models.common import BaseModel
+
+class Category(BaseModel):
+    user = fields.ForeignKeyField("models.User", related_name="categories", null=False, description="用户",
+                                  on_delete=fields.NO_ACTION)
+    name = fields.CharField(max_length=64, null=False, description="分类名称")
+
+    class Meta:
+        table = "t_category"
+        table_description="分类表"
+
+class Article(BaseModel):
+    user = fields.ForeignKeyField("models.User",
+                                  related_name="articles",
+                                  null=False,
+                                  description="用户",
+                                  on_delete=fields.NO_ACTION)
+    category = fields.ForeignKeyField("models.Category",
+                                      related_name="articles",
+                                      null=False,
+                                      description="分类",
+                                      on_delete=fields.NO_ACTION)
+    tags = fields.ManyToManyField("models.Tag",
+                                  related_name="articles",
+                                  through="t_article_tag",
+                                  on_delete=fields.NO_ACTION)
+    status = fields.IntEnumField(
+        enum_type=ArticleStatusEnum,
+        default=ArticleStatusEnum.UB_PUBLISHED,
+        null=False,
+        description="文章状态 0-未发布 1-已发布"
+    )
+    title = fields.CharField(max_length=256,null=False,description="文章标题")
+    intro = fields.CharField(max_length=256,null=False,description="文章摘要")
+    content = fields.TextField(null=False,description="文章内容")
+    view_count = fields.IntField(default=0,null=False,description="文章浏览次数")
+
+    seo_title = fields.CharField(max_length=256,null=False,description="SEO标题")
+    seo_keywords = fields.CharField(max_length=256,null=False,description="SEO关键词")
+    seo_description =fields.CharField(max_length=256,null=False,description="SEO描述")
+
+
+    class Meta:
+        table = "t_article"
+        table_description="文章表"
+class Tag(BaseModel):
+    user = fields.ForeignKeyField("models.User",related_name="tags",null=False, description="用户", on_delete=fields.NO_ACTION)
+    name = fields.CharField(max_length=64,null=False,description="标签名称")
+    articles = fields.ReverseRelation['Article']
+
+    class Meta:
+        table = "t_tag"
+        table_description="标签表"
+```
+
++ 公共表模型`app/models/common.py`
+
+```python
+from tortoise import Model,fields
+class BaseModel(Model):
+    is_deleted = fields.BooleanField(default=False,null=False,description="是否删除")
+    created_at = fields.DatetimeField(auto_now_add=True,null=False,db_index=True,description="创建时间")
+    update_at = fields.DatetimeField(auto_now=True,null=False,description="更新时间")
+
+    class Meta:
+        abstract = True
+```
+
 
 
 ### 1.10 实现分类管理接口
@@ -1069,10 +1145,26 @@ uv run aerich upgrade
 ## 3. 参考
 
 1. [Fastapi依赖项](https://fastapi.tiangolo.com/zh/tutorial/dependencies/)
-1. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)
+
+2. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)
+
 3. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
-3. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
-3. [JWT 基础概念详解](https://javaguide.cn/system-design/security/jwt-intro.html#%E4%BB%80%E4%B9%88%E6%98%AF-jwt)
-3. [Boomerang轻量化测试工具](https://boomerangapi.com/index.html)
+
+4. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
+
+5. [JWT 基础概念详解](https://javaguide.cn/system-design/security/jwt-intro.html#%E4%BB%80%E4%B9%88%E6%98%AF-jwt)
+
+6. [Boomerang轻量化测试工具](https://boomerangapi.com/index.html)
+
 7. [处理错误教程](https://fastapi.tiangolo.com/zh/tutorial/handling-errors/#raise-an-httpexception-in-your-code)
+
+8. [Tortoise文档](https://tortoise.org.cn/index.html)
+
+9. [Aerich ](https://github.com/tortoise/aerich/blob/dev/README.md)
+
+10. [Aerich Migration](https://tortoise.github.io/migration.html)
+
+    
+
+   
 
