@@ -36,6 +36,10 @@ async def register(param: RegisterParam,
 async def login(param:LoginParam,
                 auth_service:Annotated[AuthService,Depends(deps.get_auth_service)]):
     return ApiResult.success(await auth_service.login(param))
+
+@router.get("/test_token")
+async def test_token(user:Annotated[User,Depends(deps.get_current_user)]):
+    print("Hello world")
 # v1
 # @router.get("/test")
 # async def test(user: Annotated[User, Depends(deps.get_current_user)]):

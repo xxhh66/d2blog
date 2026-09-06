@@ -1130,6 +1130,8 @@ class BaseModel(Model):
 
 ### 1.10 实现分类管理接口
 
+数据库主要实现的功能：**增删改查**。
+
 
 
 ### 1.11 标签管理接口
@@ -1144,25 +1146,27 @@ class BaseModel(Model):
 
 ## 3. 参考
 
-1. [Fastapi依赖项](https://fastapi.tiangolo.com/zh/tutorial/dependencies/)
+1. [boge_blog博主源代码](https://github.com/hejanbo/boge_blog)
 
-2. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)
+2. [Fastapi依赖项](https://fastapi.tiangolo.com/zh/tutorial/dependencies/)
 
-3. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
+3. [Tortoise ORM 1.1.7文档](https://tortoise.github.io/getting_started.html)
 
-4. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
+4. [UV官方文档](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_2_2)
 
-5. [JWT 基础概念详解](https://javaguide.cn/system-design/security/jwt-intro.html#%E4%BB%80%E4%B9%88%E6%98%AF-jwt)
+5. [uv菜鸟教程](https://www.runoob.com/python3/uv-tutorial.html)
 
-6. [Boomerang轻量化测试工具](https://boomerangapi.com/index.html)
+6. [JWT 基础概念详解](https://javaguide.cn/system-design/security/jwt-intro.html#%E4%BB%80%E4%B9%88%E6%98%AF-jwt)
 
-7. [处理错误教程](https://fastapi.tiangolo.com/zh/tutorial/handling-errors/#raise-an-httpexception-in-your-code)
+7. [Boomerang轻量化测试工具](https://boomerangapi.com/index.html)
 
-8. [Tortoise文档](https://tortoise.org.cn/index.html)
+8. [处理错误教程](https://fastapi.tiangolo.com/zh/tutorial/handling-errors/#raise-an-httpexception-in-your-code)
 
-9. [Aerich ](https://github.com/tortoise/aerich/blob/dev/README.md)
+9. [Tortoise文档](https://tortoise.org.cn/index.html)
 
-10. [Aerich Migration](https://tortoise.github.io/migration.html)
+10. [Aerich ](https://github.com/tortoise/aerich/blob/dev/README.md)
+
+11. [Aerich Migration](https://tortoise.github.io/migration.html)
 
     
 

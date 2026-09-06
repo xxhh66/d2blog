@@ -8,7 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from tortoise.contrib.fastapi import register_tortoise
 
 from app.core import config, exceptions
-from app.routers import auth,routers_deps
+from app.routers import auth,routers_deps,admin
 
 # 创建应用实例，后续所有路由和中间件都挂载在此对象上。
 myapp = FastAPI()
@@ -19,7 +19,7 @@ register_tortoise(myapp, config=config.TORTOISE_ORM, generate_schemas=False)
 # 引入认证相关路由，统一加上 /api 前缀。
 myapp.include_router(auth.router, prefix="/api")
 myapp.include_router(routers_deps.router, prefix="/router_deps")
-
+myapp.include_router(admin.admin_router,prefix="/api")
 
 # 注册异常
 myapp.add_exception_handler(exceptions.BlogException, exceptions.blog_exception_handler) # type: ignore

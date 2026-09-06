@@ -10,6 +10,18 @@ from fastapi.params import Header, Depends
 from app.services.auth import AuthService
 from app.models import User
 from app.utils import jwt_util
+from app.services.admin.categories import CategoryAdminService
+from app.core.enums import BlogErrorEnum
+from app.core.exceptions import BlogException
+
+from fastapi.security import OAuth2PasswordBearer
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/login"
+)
+
+def get_category_admin_service() -> CategoryAdminService:
+    return CategoryAdminService()
 
 
 def get_auth_service() -> AuthService:
@@ -57,9 +69,12 @@ async def get_current_user(authorization: Annotated[str, Header()])->User:
         print(e)
         raise HTTPException(status_code=400, detail="无效的token")
 
+
+
 def check_permission(prem:str):
     def _check_permission(user:Annotated[User,Depends(get_current_user)]):
         if prem!='test_blog':
             raise HTTPException(status_code=400,detail="无权限")
     return _check_permission
+
 
