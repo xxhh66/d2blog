@@ -1132,9 +1132,300 @@ class BaseModel(Model):
 
 数据库主要实现的功能：**增删改查**。
 
++ 新增`app/schemas/categories.py`
+
+```python
+from datetime import datetime
+
+from pydantic import BaseModel,Field
+
+
+class CategoryCreateParam(BaseModel):
+    name: str = Field(..., description="分类名称", max_length=64)
+
+class CategoryUpdateParam(BaseModel):
+    id:int= Field(...,description="分类ID")
+    name:str=Field(...,description="分类名称",max_length=64)
+
+class CategoryPageParam(BaseModel):
+    page:int=Field(1,description="页码")
+    page_size:int=Field(10,description="每页数量")
+    name:str|None=Field(default=None,description="分类名称")
+
+
+class CategoryPageItemResult(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S")
+        }
+```
+
++ 新增服务`app/services/admin/categories.py`
+
+>  主要实现增删改查服务
+
+```python
+from tortoise import Model
+from unicodedata import category
+
+from app.core.enums import BlogErrorEnum
+from app.core.exceptions import BlogException
+from app.schemas.common import IdParam,ApiPageResult
+from app.schemas.categories import CategoryCreateParam,CategoryUpdateParam,CategoryPageParam,CategoryPageItemResult
+from app.models import User,Category
+
+
+class CategoryAdminService:
+    async def create(self, param: CategoryCreateParam, user: User) -> bool:
+        category = await Category.get_or_none(name=param.name, is_deleted=False, user=user)
+        if category:
+            raise BlogException(BlogErrorEnum.CATEGORY_EXIST)
+        await Category.create(name=param.name, user=user)
+        return True
+    
+    async def update(self,param:CategoryUpdateParam,user:User)->bool:
+        category = await Category.get_or_none(pk=param.id, is_deleted=False, user=user)
+        if not category:
+            raise BlogException(BlogErrorEnum.CATEGORY_NOT_FOUND)
+        category.name = param.name
+        await category.save()
+        return True
+
+
+    async def delete(self,param:IdParam,user:User)->bool:
+        await Category.filter(pk=param.id, is_deleted=False, user=user).update(is_deleted=True)
+        return True
+
+    async def page_list(self,param:CategoryPageParam,user:User):
+        queryset=Category.filter(is_deleted=False,user=user).order_by('-id')
+        if param.name:
+            queryset =queryset.filter(name__icontains=param.name)
+        count = await queryset.count()
+        categories = []
+        if count>0:
+            categories = await queryset.offset((param.page-1)*param.page_size).limit(param.page_size).all()
+
+        result_list = [CategoryPageItemResult.model_validate(category) for category in categories]
+
+        return ApiPageResult.success(param.page, param.page_size, count, result_list)
+```
+
++ 新增路由`app/routers/admin/categories.py`
+
+```python
+from tortoise import Model
+from unicodedata import category
+
+from app.core.enums import BlogErrorEnum
+from app.core.exceptions import BlogException
+from app.schemas.common import IdParam,ApiPageResult
+from app.schemas.categories import CategoryCreateParam,CategoryUpdateParam,CategoryPageParam,CategoryPageItemResult
+from app.models import User,Category
+
+
+class CategoryAdminService:
+    async def create(self, param: CategoryCreateParam, user: User) -> bool:
+        category = await Category.get_or_none(name=param.name, is_deleted=False, user=user)
+        if category:
+            raise BlogException(BlogErrorEnum.CATEGORY_EXIST)
+        await Category.create(name=param.name, user=user)
+        return True
+    
+    async def update(self,param:CategoryUpdateParam,user:User)->bool:
+        category = await Category.get_or_none(pk=param.id, is_deleted=False, user=user)
+        if not category:
+            raise BlogException(BlogErrorEnum.CATEGORY_NOT_FOUND)
+        category.name = param.name
+        await category.save()
+        return True
+
+
+    async def delete(self,param:IdParam,user:User)->bool:
+        await Category.filter(pk=param.id, is_deleted=False, user=user).update(is_deleted=True)
+        return True
+
+    async def page_list(self,param:CategoryPageParam,user:User):
+        queryset=Category.filter(is_deleted=False,user=user).order_by('-id')
+        if param.name:
+            queryset =queryset.filter(name__icontains=param.name)
+        count = await queryset.count()
+        categories = []
+        if count>0:
+            categories = await queryset.offset((param.page-1)*param.page_size).limit(param.page_size).all()
+
+        result_list = [CategoryPageItemResult.model_validate(category) for category in categories]
+
+        return ApiPageResult.success(param.page, param.page_size, count, result_list)
+```
+
+```python
+# app/routers/admin/__init__.py
+
+from fastapi import APIRouter
+
+from app.routers.admin import categories,tags
+
+admin_router = APIRouter(prefix="/admin")
+admin_router.include_router(categories.router)
+admin_router.include_router(tags.router)
+```
+
++ `main.py`增加路由
+
+```python
+myapp.include_router(admin.admin_router,prefix="/api")
+```
+
++ 添加依赖项`app/core/deps.py`
+
+```python
+def get_category_admin_service() -> CategoryAdminService:
+    return CategoryAdminService()
+```
+
 
 
 ### 1.11 标签管理接口
+
+数据库主要实现的功能：**增删改查**。
+
++ 新增`app/schemas/tags.py`
+
+```python
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+
+class TagCreateParam(BaseModel):
+    name: str = Field(..., description="标签名称", max_length=64)
+
+class TagUpdateParam(BaseModel):
+    id: int = Field(..., description="标签ID")
+    name: str = Field(..., description="标签名称", max_length=64)
+
+    class Config:
+        from_attributes = True
+
+class TagPageParam(BaseModel):
+    page: int = Field(1, description="页码")
+    page_size: int = Field(10, description="每页数量")
+    name: str | None = Field(default=None, description="标签名称")
+
+class TagPageItemResult(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S")
+        }
+```
+
+
+
++ 新增服务`app/services/admin/tags.py`
+
+```python
+from app.core.enums import BlogErrorEnum
+from app.core.exceptions import BlogException
+from app.models import User, Tag
+from app.schemas.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
+from app.schemas.common import IdParam, ApiPageResult
+
+
+class TagAdminService:
+
+    async def create(self, param: TagCreateParam, user: User) -> TagPageItemResult:
+        tag = await Tag.get_or_none(name=param.name, is_deleted=False, user=user)
+        if tag:
+            raise BlogException(BlogErrorEnum.TAG_EXIST)
+        tag = await Tag.create(name=param.name, user=user)
+        return TagPageItemResult.model_validate(tag)
+
+
+    async def update(self, param: TagUpdateParam, user: User) -> bool:
+        tag = await Tag.get_or_none(pk=param.id, is_deleted=False, user=user)
+        if not tag:
+            raise BlogException(BlogErrorEnum.TAG_NOT_FOUND)
+        tag.name = param.name
+        await tag.save()
+        return True
+
+    async def delete(self, param: IdParam, user: User):
+        await Tag.filter(pk=param.id, is_deleted=False, user=user).update(is_deleted=True)
+        return True
+
+    async def page_list(self, param: TagPageParam, user: User):
+        queryset = Tag.filter(is_deleted=False, user=user).order_by('-id')
+        if param.name:
+            queryset = queryset.filter(name__icontains=param.name)
+
+        count = await queryset.count()
+        tags = []
+        if count > 0:
+            tags = await queryset.offset( (param.page - 1) * param.page_size ).limit(param.page_size).all()
+        result_list = [TagPageItemResult.model_validate(tag) for tag in tags]
+
+        return ApiPageResult.success(param.page, param.page_size, count, result_list)
+```
+
++ 新增路由`app/routers/admin/tags.py`
+
+```python
+from typing import Annotated, List
+
+from fastapi import APIRouter, Depends
+
+from app.core import deps
+from app.models import User
+from app.schemas.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
+from app.schemas.common import ApiResult, IdParam, ApiPageResult
+from app.services.admin.tags import TagAdminService
+
+router = APIRouter(prefix="/tags", tags=["后端-标签管理接口"])
+
+@router.post("/create", response_model=ApiResult[TagPageItemResult])
+async def create(param: TagCreateParam,
+                 user: Annotated[User, Depends(deps.get_current_user)],
+                 tag_service: Annotated[TagAdminService, Depends(deps.get_tag_admin_service)]) -> ApiResult[bool]:
+    return ApiResult.success(await tag_service.create(param, user))
+
+
+@router.post("/update", response_model=ApiResult[bool])
+async def update(param: TagUpdateParam,
+                 user: Annotated[User, Depends(deps.get_current_user)],
+                 tag_service: Annotated[TagAdminService, Depends(deps.get_tag_admin_service)]):
+    return ApiResult.success(await tag_service.update(param, user))
+
+
+@router.post("/delete", response_model=ApiResult[bool])
+async def delete(param: IdParam,
+                 user: Annotated[User, Depends(deps.get_current_user)],
+                 tag_service: Annotated[TagAdminService, Depends(deps.get_tag_admin_service)]):
+    return ApiResult.success(await tag_service.delete(param, user))
+
+@router.post("/page_list", response_model=ApiPageResult[List[TagPageItemResult]])
+async def page_list(param: TagPageParam,
+                    user: Annotated[User, Depends(deps.get_current_user)],
+                    tag_service: Annotated[TagAdminService, Depends(deps.get_tag_admin_service)]):
+    return await tag_service.page_list(param, user)
+
+```
+
++ 添加依赖项`app/core/deps.py`
+
+```python
+def get_tag_admin_service() -> TagAdminService:
+    return TagAdminService()
+```
 
 
 
@@ -1143,6 +1434,56 @@ class BaseModel(Model):
 
 
 ### 1.13 文章创建与删除接口
+
+
+
+### 1.14 文章分页查询接口
+
+
+
+### 1.15 文章发布接口
+
+
+
+### 1.16 C 端首页最新文章查询接口
+
+
+
+### 1.17 C 端首页标签统计接口 
+
+
+
+### 1.18 C 端首页分类统计接口
+
+###  
+
+### 1.19 缓存代码优化 
+
+
+
+### 1.20  C 端文章详情接口与缓存穿透问题 
+
+
+
+### 1.21  C 端文章查询接口 
+
+
+
+### 1.22 C 端缓存调整 
+
+
+
+### 1.23 引入 loguru 日志 
+
+
+
+### 1.24 文章访问次数接口与异步后台任务 
+
+
+
+### 1.25 生产环境部署 
+
+
 
 ## 3. 参考
 

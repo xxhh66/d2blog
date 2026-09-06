@@ -13,16 +13,13 @@ from app.utils import jwt_util
 from app.services.admin.categories import CategoryAdminService
 from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
-
-from fastapi.security import OAuth2PasswordBearer
-
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/login"
-)
+from app.services.admin.tags import TagAdminService
 
 def get_category_admin_service() -> CategoryAdminService:
     return CategoryAdminService()
 
+def get_tag_admin_service() -> TagAdminService:
+    return TagAdminService()
 
 def get_auth_service() -> AuthService:
     """创建并返回认证服务实例。
