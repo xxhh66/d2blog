@@ -1,0 +1,44 @@
+from tortoise.transactions import in_transaction
+from app.core.enums import BlogErrorEnum
+from app.core.exceptions import BlogException
+from app.models import User,Article,Category,Tag
+from app.schemas import tags
+from app.schemas.articles import ArticleCreateParam
+
+
+class ArticleAdminService:
+    async def create(self,param:ArticleCreateParam,user:User)->bool:
+        # 检测文章是否存在
+        article = await Article.get_or_none(title=param.title, is_deleted=False,user=user)
+        if article:
+            raise BlogException(BlogErrorEnum.ARTICLE_EXIST)
+        # 检测分类是否存在
+        category = await Category.get_or_none(pk=param.category_id, is_deleted=False,user=user)
+        if not category:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+        # 检测标签是否存在
+        tags = []
+        if param.tag_ids:
+            tags = await Tag.filter(pk__in=param.tag_ids, is_deleted=False,user=user)
+            if len(tags) != len(param.tag_ids):
+                raise BlogException(BlogErrorEnum.TAG_NOT_FOUND)
+
+        async with in_transaction():
+            article = Article()
+            article.title = param.title
+            article.intro = param.intro
+            article.content = param.content
+            article.seo_title = param.seo_title
+            article.seo_keywords = param.seo_keywords
+            article.seo_description = param.seo_description
+            article.category = category
+            article.user = user
+            await article.save()
+
+            if tags:
+                await article.tags.add(*tags)
+
+            # 更新缓存
+            # await self.article_cache_service.update_article_by_id(article.pk)
+
+        return True
