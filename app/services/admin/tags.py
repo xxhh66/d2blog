@@ -24,6 +24,7 @@ class TagAdminService:
         return True
 
     async def delete(self, param: IdParam, user: User):
+        # 软删除
         await Tag.filter(pk=param.id, is_deleted=False, user=user).update(is_deleted=True)
         return True
 

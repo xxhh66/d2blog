@@ -26,6 +26,7 @@ class CategoryAdminService:
 
 
     async def delete(self,param:IdParam,user:User)->bool:
+        # 软删除
         await Category.filter(pk=param.id, is_deleted=False, user=user).update(is_deleted=True)
         return True
 
