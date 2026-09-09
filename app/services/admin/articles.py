@@ -1,3 +1,5 @@
+from itertools import count
+
 from tortoise.transactions import in_transaction, atomic
 from unicodedata import category
 
@@ -5,8 +7,8 @@ from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
 from app.models import User,Article,Category,Tag
 from app.schemas import tags, articles
-from app.schemas.articles import ArticleCreateParam, ArticleUpdateParam
-from app.schemas.common import IdParam
+from app.schemas.articles import ArticleCreateParam, ArticleUpdateParam,ArticlePageParam,ArticlePageItemResult
+from app.schemas.common import IdParam, ApiPageResult
 
 
 class ArticleAdminService:
@@ -82,3 +84,20 @@ class ArticleAdminService:
     async def delete(self,param:IdParam,user:User):
         await Article.filter(pk=param.id,is_deleted=False,user=user).update(is_deleted=True)
         return True
+
+    async def page_list(self,param:ArticlePageParam,user:User):
+        queryset = Article.filter(is_deleted=False,user=user).order_by('-id')
+        if param.title:
+            queryset = queryset.filter(title__contains=param.title)
+        if param.category_id:
+            queryset = queryset.filter(category_id=param.category_id)
+        if param.tag_ids:
+            queryset = queryset.filter(tags__in=param.tag_ids)
+        count = await queryset.count()
+        articles=[]
+        if  count > 0:
+            articles = await queryset.offset( (param.page - 1) * param.page_size ).limit(param.page_size).all()
+        result_list = [articles.ArticlePageItemResult.model_validate(article) for article in articles]
+
+        return ApiPageResult.success(param.page, param.page_size, count, result_list)
+
