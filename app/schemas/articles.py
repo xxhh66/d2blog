@@ -41,3 +41,6 @@ class ArticlePageItemResult(BaseModel):
 
     class Config:
         from_attributes = True
+class ArticleUpdateStatusParam(BaseModel):
+    id:int = Field(..., description="文章ID")
+    status:ArticleStatusEnum = Field(...,description="文章状态")

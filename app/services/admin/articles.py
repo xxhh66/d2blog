@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from itertools import count
 
 from tortoise.transactions import in_transaction, atomic
@@ -7,7 +9,7 @@ from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
 from app.models import User,Article,Category,Tag
 from app.schemas import tags, articles
-from app.schemas.articles import ArticleCreateParam, ArticleUpdateParam,ArticlePageParam,ArticlePageItemResult
+from app.schemas.articles import ArticleCreateParam, ArticleUpdateParam,ArticlePageParam,ArticlePageItemResult,ArticleUpdateStatusParam
 from app.schemas.common import IdParam, ApiPageResult
 
 
@@ -101,3 +103,14 @@ class ArticleAdminService:
 
         return ApiPageResult.success(param.page, param.page_size, count, result_list)
 
+    async def update_status(self, param: ArticleUpdateStatusParam,user:User)->bool:
+        article = await Article.get_or_none(pk=param.id,is_deleted=False,user=user)
+        if not article:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+        if article.status==param.status:
+            return True
+
+        article.status = param.status
+        article.update_at = datetime.now()
+        await article.save(update_fields=["status", "update_at"])
+        return True

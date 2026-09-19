@@ -1593,6 +1593,103 @@ async def create(param: IdParam,
 
 ### 1.15 文章发布接口
 
+> 状态更新
+>
+> 运行前需要更新数据库
+>
+> ```python
+> uv run aerich migrate
+> uv run aerich upgrade
+> ```
+>
+> 
+
++ 增加文章数据库字段，更新数据库
+
+```python
+class Article(BaseModel):
+    user = fields.ForeignKeyField("models.User",
+                                  related_name="articles",
+                                  null=False,
+                                  description="用户",
+                                  on_delete=fields.NO_ACTION)
+    category = fields.ForeignKeyField("models.Category",
+                                      related_name="articles",
+                                      null=False,
+                                      description="分类",
+                                      on_delete=fields.NO_ACTION)
+    tags = fields.ManyToManyField("models.Tag",
+                                  related_name="articles",
+                                  through="t_article_tag",
+                                  on_delete=fields.NO_ACTION)
+    # 增加文章状态
+    status = fields.IntEnumField(
+        enum_type=ArticleStatusEnum,
+        default=ArticleStatusEnum.UB_PUBLISHED,
+        null=False,
+        description="文章状态 0-未发布 1-已发布"
+    )
+    title = fields.CharField(max_length=256,null=False,description="文章标题")
+    intro = fields.CharField(max_length=256,null=False,description="文章摘要")
+    content = fields.TextField(null=False,description="文章内容")
+    view_count = fields.IntField(default=0,null=False,description="文章浏览次数")
+
+    seo_title = fields.CharField(max_length=256,null=False,description="SEO标题")
+    seo_keywords = fields.CharField(max_length=256,null=False,description="SEO关键词")
+    seo_description =fields.CharField(max_length=256,null=False,description="SEO描述")
+
+
+    class Meta:
+        table = "t_article"
+        table_description="文章表"
+```
+
++ 增加Article状态参数`app/core/enums.py`
+
+```python
+class ArticleStatusEnum(IntEnum):
+    UB_PUBLISHED = 0
+    PUBLISHED = 1
+```
+
++ 新增Article状态更新参数`app/schemas/articles.py`
+
+```python
+class ArticleUpdateStatusParam(BaseModel):
+    id:int = Field(..., description="文章ID")
+    status:ArticleStatusEnum = Field(...,description="文章状态")
+```
+
++ 新增Article状态更新服务`app/services/admin/articles.py`
+
+```python
+    async def update_status(self, param: ArticleUpdateStatusParam,user:User)->bool:
+        article = await Article.get_or_none(pk=param.id,is_deleted=False,user=user)
+        if not article:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+        if article.status==param.status:
+            return True
+
+        article.status = param.status
+        article.update_at = datetime.now()
+        await article.save(update_fields=["status", "update_at"])
+        return True
+
+```
+
++ 新增`update_status`路由`app/routers/admin/articles.py`
+
+```python
+@router.post("/update_status", response_model=ApiResult[bool])
+async def create(param: ArticleUpdateStatusParam,
+                 user: Annotated[User, Depends(deps.get_current_user)],
+                 article_service: Annotated[ArticleAdminService, Depends(deps.get_article_admin_service)]):
+    return ApiResult.success(await article_service.update_status(param, user))
+
+```
+
+
+
 
 
 ### 1.16 C 端首页最新文章查询接口
