@@ -15,6 +15,7 @@ from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
 from app.services.admin.tags import TagAdminService
 from app.services.admin.articles import ArticleAdminService
+from app.services.articles import ArticleService
 
 def get_category_admin_service() -> CategoryAdminService:
     return CategoryAdminService()
@@ -24,6 +25,9 @@ def get_tag_admin_service() -> TagAdminService:
 
 def get_article_admin_service() -> ArticleAdminService:
     return ArticleAdminService()
+
+def get_article_service() -> ArticleService:
+    return ArticleService()
 
 def get_auth_service() -> AuthService:
     """创建并返回认证服务实例。

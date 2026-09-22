@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.core import deps
 from app.models import User
-from app.schemas.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
+from app.schemas.admin.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
 from app.schemas.common import ApiResult, IdParam, ApiPageResult
 from app.services.admin.tags import TagAdminService
 

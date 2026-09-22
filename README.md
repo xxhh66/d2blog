@@ -1132,7 +1132,7 @@ class BaseModel(Model):
 
 数据库主要实现的功能：**增删改查**。
 
-+ 新增`app/schemas/categories.py`
++ 新增`app/schemas/admin/categories.py`
 
 ```python
 from datetime import datetime
@@ -1294,7 +1294,7 @@ def get_category_admin_service() -> CategoryAdminService:
 
 数据库主要实现的功能：**增删改查**。
 
-+ 新增`app/schemas/tags.py`
++ 新增`app/schemas/admin/tags.py`
 
 ```python
 from datetime import datetime
@@ -1337,7 +1337,7 @@ class TagPageItemResult(BaseModel):
 from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
 from app.models import User, Tag
-from app.schemas.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
+from app.schemas.admin.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
 from app.schemas.common import IdParam, ApiPageResult
 
 
@@ -1349,7 +1349,6 @@ class TagAdminService:
             raise BlogException(BlogErrorEnum.TAG_EXIST)
         tag = await Tag.create(name=param.name, user=user)
         return TagPageItemResult.model_validate(tag)
-
 
     async def update(self, param: TagUpdateParam, user: User) -> bool:
         tag = await Tag.get_or_none(pk=param.id, is_deleted=False, user=user)
@@ -1371,7 +1370,7 @@ class TagAdminService:
         count = await queryset.count()
         tags = []
         if count > 0:
-            tags = await queryset.offset( (param.page - 1) * param.page_size ).limit(param.page_size).all()
+            tags = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
         result_list = [TagPageItemResult.model_validate(tag) for tag in tags]
 
         return ApiPageResult.success(param.page, param.page_size, count, result_list)
@@ -1386,11 +1385,12 @@ from fastapi import APIRouter, Depends
 
 from app.core import deps
 from app.models import User
-from app.schemas.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
+from app.schemas.admin.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
 from app.schemas.common import ApiResult, IdParam, ApiPageResult
 from app.services.admin.tags import TagAdminService
 
 router = APIRouter(prefix="/tags", tags=["后端-标签管理接口"])
+
 
 @router.post("/create", response_model=ApiResult[TagPageItemResult])
 async def create(param: TagCreateParam,
@@ -1411,6 +1411,7 @@ async def delete(param: IdParam,
                  user: Annotated[User, Depends(deps.get_current_user)],
                  tag_service: Annotated[TagAdminService, Depends(deps.get_tag_admin_service)]):
     return ApiResult.success(await tag_service.delete(param, user))
+
 
 @router.post("/page_list", response_model=ApiPageResult[List[TagPageItemResult]])
 async def page_list(param: TagPageParam,
@@ -1439,26 +1440,26 @@ from unicodedata import category
 
 from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
-from app.models import User,Article,Category,Tag
-from app.schemas import tags, articles
+from app.models import User, Article, Category, Tag
+from app.schemas.admin import tags, articles
 from app.schemas.articles import ArticleCreateParam, ArticleUpdateParam
 from app.schemas.common import IdParam
 
 
 class ArticleAdminService:
-    async def create(self,param:ArticleCreateParam,user:User)->bool:
+    async def create(self, param: ArticleCreateParam, user: User) -> bool:
         # 检测文章是否存在
-        article = await Article.get_or_none(title=param.title, is_deleted=False,user=user)
+        article = await Article.get_or_none(title=param.title, is_deleted=False, user=user)
         if article:
             raise BlogException(BlogErrorEnum.ARTICLE_EXIST)
         # 检测分类是否存在
-        category = await Category.get_or_none(pk=param.category_id, is_deleted=False,user=user)
+        category = await Category.get_or_none(pk=param.category_id, is_deleted=False, user=user)
         if not category:
             raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
         # 检测标签是否存在
         tags = []
         if param.tag_ids:
-            tags = await Tag.filter(pk__in=param.tag_ids, is_deleted=False,user=user)
+            tags = await Tag.filter(pk__in=param.tag_ids, is_deleted=False, user=user)
             if len(tags) != len(param.tag_ids):
                 raise BlogException(BlogErrorEnum.TAG_NOT_FOUND)
 
@@ -1483,7 +1484,7 @@ class ArticleAdminService:
         return True
 ```
 
-+ 新建模型`app/schemas/articles.py`
++ 新建模型`app/schemas/admin/articles.py`
 
 ```python
 from pydantic import BaseModel, Field
@@ -1559,7 +1560,7 @@ async def create(param: ArticleCreateParam,
 
 
 
-+ 增加模型`app/schemas/articles.py`
++ 增加模型`app/schemas/admin/articles.py`
 
 ```python
 class ArticleUpdateParam(ArticleCreateParam):
@@ -1652,7 +1653,7 @@ class ArticleStatusEnum(IntEnum):
     PUBLISHED = 1
 ```
 
-+ 新增Article状态更新参数`app/schemas/articles.py`
++ 新增Article状态更新参数`app/schemas/admin/articles.py`
 
 ```python
 class ArticleUpdateStatusParam(BaseModel):

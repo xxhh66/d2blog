@@ -2,7 +2,7 @@ from typing import Annotated,List
 from fastapi import APIRouter,Depends
 from app.core import deps
 from app.models import User
-from app.schemas.categories import CategoryCreateParam,CategoryUpdateParam,CategoryPageParam,CategoryPageItemResult
+from app.schemas.admin.categories import CategoryCreateParam,CategoryUpdateParam,CategoryPageParam,CategoryPageItemResult
 from app.schemas.common import ApiResult, IdParam
 from app.services.admin.categories import CategoryAdminService
 

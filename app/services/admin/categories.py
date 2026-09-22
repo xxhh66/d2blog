@@ -4,7 +4,7 @@ from unicodedata import category
 from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
 from app.schemas.common import IdParam,ApiPageResult
-from app.schemas.categories import CategoryCreateParam,CategoryUpdateParam,CategoryPageParam,CategoryPageItemResult
+from app.schemas.admin.categories import CategoryCreateParam,CategoryUpdateParam,CategoryPageParam,CategoryPageItemResult
 from app.models import User,Category
 
 

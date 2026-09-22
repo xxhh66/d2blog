@@ -6,7 +6,7 @@ from fastapi.params import Path
 
 from app.core import deps
 from app.models import User
-from app.schemas.articles import ArticleCreateParam, ArticleUpdateParam, ArticlePageParam, ArticlePageItemResult, \
+from app.schemas.admin.articles import ArticleCreateParam, ArticleUpdateParam, ArticlePageParam, ArticlePageItemResult, \
     ArticleUpdateStatusParam
 # ArticleUpdateParam, ArticlePageParam, ArticlePageItemResult, ArticleUpdateStatusParam, ArticleDetailResult)
 

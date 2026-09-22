@@ -1,7 +1,7 @@
 from app.core.enums import BlogErrorEnum
 from app.core.exceptions import BlogException
 from app.models import User, Tag
-from app.schemas.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
+from app.schemas.admin.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
 from app.schemas.common import IdParam, ApiPageResult
 
 
