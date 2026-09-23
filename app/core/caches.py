@@ -31,4 +31,5 @@ class CommonCache(Generic[T]):
 # 验证码缓存：最多保存 100 个验证码记录，3 分钟自动过期。
 verify_code_cache = CommonCache(maxsize=1024, ttl=60 * 3)
 latest_articles_cache = CommonCache(maxsize=100, ttl=60 * 30)
+category_stat_cache = CommonCache(maxsize=1, ttl=60 * 5)
 stat_cache = CommonCache(maxsize=10, ttl=60 * 5)
