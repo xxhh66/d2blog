@@ -16,6 +16,8 @@ from app.core.exceptions import BlogException
 from app.services.admin.tags import TagAdminService
 from app.services.admin.articles import ArticleAdminService
 from app.services.articles import ArticleService
+from app.services.tags import TagService
+from app.services.categories import CategoryService
 
 def get_category_admin_service() -> CategoryAdminService:
     return CategoryAdminService()
@@ -28,6 +30,12 @@ def get_article_admin_service() -> ArticleAdminService:
 
 def get_article_service() -> ArticleService:
     return ArticleService()
+
+def get_category_service() -> CategoryService:
+    return CategoryService()
+
+def get_tag_service()->TagService:
+    return TagService()
 
 def get_auth_service() -> AuthService:
     """创建并返回认证服务实例。
