@@ -27,3 +27,20 @@ class ArticlePageItemResult(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ArticleDetailResult(BaseModel):
+    id: int = Field(..., description="文章ID")
+    title: str = Field(..., description="文章标题", max_length=128)
+    content: str = Field(..., description="文章内容", max_length=10000)
+    view_count: int = Field(..., description="文章浏览量")
+
+    seo_title: str = Field(description="SEO标题")
+    seo_keywords: str = Field(description="SEO关键字")
+    seo_description: str = Field(description="SEO描述")
+
+    category: CategoryParam = Field(..., description="分类")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+
+    class Config:
+        from_attributes = True
