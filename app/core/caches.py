@@ -3,6 +3,8 @@
 该模块集中管理应用中使用到的内存缓存，包括通用缓存包装器和验证码缓存。
 缓存使用 cachetools.TTLCache，可在固定生命周期内存储临时数据，并自动过期。
 """
+import asyncio
+from unittest import result
 
 from cachetools import TTLCache
 from typing import Generic, TypeVar
@@ -26,6 +28,20 @@ class CommonCache(Generic[T]):
 
     def delete(self, key: str):
         self.cache.pop(key, None)
+
+async def cache_with_lock(cache_key:str, cache_obj:CommonCache, lock_obj: asyncio.Lock,func:callable):
+    result = cache_obj.get(cache_key)
+    if result:
+        return result
+
+    async with lock_obj:
+        result = cache_obj.get(cache_key)
+        if result:
+            return result
+
+        result = await func()
+        cache_obj.set(cache_key, result)
+        return result
 
 
 # 验证码缓存：最多保存 100 个验证码记录，3 分钟自动过期。
