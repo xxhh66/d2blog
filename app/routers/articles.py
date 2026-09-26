@@ -4,6 +4,7 @@ from app.schemas.articles import ArticlePageItemResult, ArticleDetailResult, Art
 from app.schemas.common import BasePageParam,ApiResult,ApiPageResult
 from app.services.articles import ArticleService
 from app.core import deps
+from loguru import logger
 
 
 router = APIRouter(prefix="/articles", tags=['文章相关接口'])
@@ -13,7 +14,7 @@ async def page_latest_articles(param: Annotated[BasePageParam, Query()],
     """
     分页查询文章
     """
-
+    logger.info(f"test loguru logger")
     return await article_service.page_latest_articles(param)
 
 # 查找、筛选

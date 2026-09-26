@@ -2,8 +2,8 @@
 
 该文件负责创建应用实例、注册数据库和路由，并暴露最基础的健康检查接口。
 """
-import logging
-
+# import logging
+from loguru import logger
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from tortoise.contrib.fastapi import register_tortoise
@@ -13,7 +13,8 @@ from app.routers import auth, routers_deps, admin, tags
 from app.routers import articles
 from app.routers import categories
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
+logger.add("logs/app.log",rotation="10 MB",retention=5,level="INFO")
 # 创建应用实例，后续所有路由和中间件都挂载在此对象上。
 myapp = FastAPI()
 

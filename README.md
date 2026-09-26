@@ -2380,13 +2380,354 @@ async def page_list(param:Annotated[ArticlePageParam,Query()],
     return await article_service.page_list(param)
 ```
 
-
-
 ### 1.22 C 端缓存调整 
+
+#### 1.22.1 缓存修改，取消锁的缓存
+
++ 新增涉及业务的放在cache/articles下面`app/cache/articles.py`
+
+```python
+from pydantic import BaseModel
+
+from app.core.caches import load_cache, article_cache
+from app.core.enums import ArticleStatusEnum
+from app.models import Article
+from app.schemas.articles import ArticlePydantic
+
+
+# 涉及业务的放在cache/articles下面
+class ArticleCacheService:
+    async def get_article_by_id(self,article_id:int):
+        article_cache_key = f"article_{article_id}"
+        async def _fetch_from_db():
+            _article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
+                              .prefetch_related("category", "user"))
+            if not _article:
+                return None
+            return ArticlePydantic.model_validate(_article).model_dump()
+
+        return await load_cache(article_cache_key,article_cache,_fetch_from_db)
+```
+
++ 新增取消锁的缓存`app/core/caches.py`
+
+```python
+# 取消锁的缓存
+async def load_cache(cache_key: str, cache_obj: CommonCache, func: callable):
+    # 首先从缓存中加载
+    result = cache_obj.get(cache_key)
+    if result is not None:
+        if result is NONE_OBJ:
+            return None
+        return result
+    # 根据func获取结果
+    result = await func()
+    # 将结果放入缓存
+    if result is None:
+        cache_obj.set(cache_key, NONE_OBJ)
+    else:
+        cache_obj.set(cache_key, result)
+    # 返回结果
+    return result
+```
+
++ 新增注入依赖`app/core/deps.py`
+
+```python
+def get_article_cache_service() -> ArticleCacheService:
+    return ArticleCacheService()
+
+def get_article_service(article_cache_service: Annotated[ArticleCacheService, Depends(get_article_cache_service)]) -> ArticleService:
+    return ArticleService(article_cache_service)
+```
+
+
+
++ 新增Pydantic模型`app/schemas/articles.py`
+
+```python
+
+class ArticlePydantic(BaseModel):
+    id: int = Field(..., description="文章ID")
+    title: str = Field(..., description="文章标题", max_length=128)
+    intro: str = Field(..., description="文章摘要", max_length=256)
+    status: int = Field(..., description="文章状态 0-未发布 1-已发布")
+    content: str = Field(..., description="文章内容", max_length=10000)
+    seo_title: str = Field(description="SEO标题")
+    seo_keywords: str = Field(description="SEO关键字")
+    seo_description: str = Field(description="SEO描述")
+    view_count: int = Field(..., description="文章浏览量")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+    category: CategoryParam = Field(..., description="分类")
+    tags: list[TagParam] | None = Field(default=[], description="标签列表")
+
+    class Config:
+        from_attributes = True
+```
+
++ 修改文章服务`app/services/articles.py`
+
+```python
+class ArticleService:
+    def __init__(self,article_cache_service:ArticleCacheService):
+        self.article_cache_service = article_cache_service
+        
+    async def get_by_id(self,article_id:int)->ArticleDetailResult:
+        article_lock_key = f'article:{article_id}'
+        article_lock = article_lock_cache.get(article_lock_key)
+        if not article_lock:
+            async with  ARTICLE_GLOBAL_LOCK:
+                article_lock = article_lock_cache.get(article_lock_key)
+                if not article_lock:
+                    article_lock = asyncio.Lock()
+                    article_lock_cache.set(article_lock_key,article_lock)
+        async def _fetch_from_db():
+            _article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
+                              .select_related("category", "user"))   # ← 关键：预加载外键
+            if not _article:
+                raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+            return ArticleDetailResult.model_validate(_article)
+        return await cache_with_lock(f"{article_id}",article_cache,article_lock,_fetch_from_db)
+```
+
+
+
+#### 1.22.2 缓存修改，页面最新文章
+
++ 增加缓存文章页面列表`app/cache/articles.py`
+
+```python
+    async def page_list(self,cache_key:str,page:int,page_size:int)->ApiPageResult[List[ArticlePageItemResult]]:
+        result = article_page_cache.get(cache_key)
+        if  result is None:
+            return None
+        count = result.get('count')
+        result_list = []
+
+        if count>0:
+            ids = result.get('ids')
+            for article_id in ids:
+                article = await self.get_article_by_id(article_id)
+                if article and article.get('status') == ArticleStatusEnum.PUBLISHED:
+                    result_list.append(ArticlePageItemResult.model_validate(article))
+        return ApiPageResult.success(page,page_size,count,result_list)
+
+    async def page_list_set(self, cache_key, count:int,ids:List[int]):
+        article_page_cache.set(cache_key, {
+            'count': count,
+            'ids': ids
+        })
+```
+
++ 修改文章服务`app/services/articles.py`
+
+```python
+    async def page_latest_articles(self, param: BasePageParam) -> ApiPageResult[List[ArticlePageItemResult]]:
+        # 先从缓存中获取
+        cache_key = f'latest:{param.page}:{param.page_size}'
+        result = await self.article_cache_service.page_list(cache_key,param.page,param.page_size)
+
+        if result:
+            return result
+
+
+        # 缓存中没有, 从db中获取
+        queryset = (Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED)
+                    .prefetch_related('category', 'tags')
+                    .order_by('-id'))
+        count = await queryset.count()
+        articles = []
+        if count > 0:
+            articles = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
+        result_list = [ArticlePageItemResult.model_validate(article) for article in articles]
+
+        ids = [article.id for article in articles]
+
+        result = ApiPageResult.success(param.page, param.page_size, count, result_list)
+        # 将结果放入缓存
+        await self.article_cache_service.page_list_set(cache_key, count, ids)
+
+        return result
+```
+
+
+
+#### 1.22.3
+
++ 增加刷新、删除缓存文章页面列表`app/cache/articles.py`
+
+```python
+    async def update_article_by_id(self, article_id: int):
+        article_cache_key = f'article_{article_id}'
+        article = await Article.get_or_none(pk=article_id, is_deleted=False).prefetch_related('category', 'tags')
+        if not article:
+            return
+        article_cache.set(article_cache_key, ArticlePydantic.model_validate(article).model_dump())
+
+    async def delete_article_by_id(self, article_id: int):
+        article_cache_key = f'article_{article_id}'
+        article_cache.delete(article_cache_key)
+```
+
++ 修改注入依赖`app/core/deps.py`
+
+```python
+def get_article_cache_service() -> ArticleCacheService:
+    return ArticleCacheService()
+
+def get_article_admin_service(article_cache_service: Annotated[ArticleCacheService, Depends(get_article_cache_service)]) -> ArticleAdminService:
+    return ArticleAdminService(article_cache_service)
+
+def get_article_service(article_cache_service: Annotated[ArticleCacheService, Depends(get_article_cache_service)]) -> ArticleService:
+    return ArticleService(article_cache_service)
+```
+
++ 修改文章服务`app/services/admin/articles.py`
+
+```python
+from datetime import datetime
+
+from tortoise.transactions import in_transaction, atomic
+
+from app.core.enums import BlogErrorEnum
+from app.core.exceptions import BlogException
+from app.models import User,Article,Category,Tag
+from app.schemas.articles import ArticlePageItemResult
+from app.schemas.admin.articles import ArticleCreateParam, ArticleUpdateParam,ArticlePageParam,ArticleUpdateStatusParam
+from app.schemas.common import IdParam, ApiPageResult
+from app.cache.articles import ArticleCacheService
+
+
+class ArticleAdminService:
+    def __init__(self,article_cache_service:ArticleCacheService):
+        self.article_cache_service=article_cache_service
+
+    async def create(self,param:ArticleCreateParam,user:User)->bool:
+        # 检测文章是否存在
+        article = await Article.get_or_none(title=param.title, is_deleted=False,user=user)
+        if article:
+            raise BlogException(BlogErrorEnum.ARTICLE_EXIST)
+        # 检测分类是否存在
+        category = await Category.get_or_none(pk=param.category_id, is_deleted=False,user=user)
+        if not category:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+        # 检测标签是否存在
+        tags = []
+        if param.tag_ids:
+            tags = await Tag.filter(pk__in=param.tag_ids, is_deleted=False,user=user)
+            if len(tags) != len(param.tag_ids):
+                raise BlogException(BlogErrorEnum.TAG_NOT_FOUND)
+
+        async with in_transaction():
+            article = Article()
+            article.title = param.title
+            article.intro = param.intro
+            article.content = param.content
+            article.seo_title = param.seo_title
+            article.seo_keywords = param.seo_keywords
+            article.seo_description = param.seo_description
+            article.category = category
+            article.user = user
+            await article.save()
+
+            if tags:
+                await article.tags.add(*tags)
+
+            # 更新缓存
+            await self.article_cache_service.update_article_by_id(param.id)
+
+        return True
+
+    async def update(self,param:ArticleUpdateParam,user:User)->bool  :
+        article = await Article.get_or_none(pk=param.id,is_deleted=False,user=user)
+        if not article:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+        # 检测分类是否存在
+        category = await Category.get_or_none(pk=param.category_id,is_deleted=False,user=user)
+        if not category:
+            raise BlogException(BlogErrorEnum.CATEGORY_NOT_FOUND)
+        tags = []
+        if param.tag_ids:
+            tags = await Tag.filter(pk__in=param.tag_ids,is_deleted=False,user=user)
+            if len(tags) != len(param.tag_ids):
+                raise BlogException(BlogErrorEnum.TAG_NOT_FOUND)
+
+        @atomic()
+        async def save_article():
+            article.title = param.title
+            article.intro = param.intro
+            article.content = param.content
+            article.seo_title = param.seo_title
+            article.seo_keywords = param.seo_keywords
+            article.seo_description = param.seo_description
+            article.category = category
+            article.user = user
+            await article.save()
+            await article.tags.clear()
+            if tags:
+                await article.tags.add(*tags)
+
+
+        await save_article()
+        # 更新缓存
+        await self.article_cache_service.update_article_by_id(param.id)
+
+        return True
+    async def delete(self,param:IdParam,user:User):
+        await Article.filter(pk=param.id,is_deleted=False,user=user).update(is_deleted=True)
+        await self.article_cache_service.delete_article_by_id(param.id)
+        return True
+
+    async def page_list(self, param: ArticlePageParam, user: User):
+        queryset = Article.filter(is_deleted=False, user=user).order_by('-id').prefetch_related('category', 'tags')
+        if param.title:
+            queryset = queryset.filter(title__icontains=param.title)
+        if param.category_id:
+            queryset = queryset.filter(category__id=param.category_id)
+        if param.tag_id:
+            queryset = queryset.filter(tags__id=param.tag_id)
+
+        count = await queryset.count()
+        articles = []
+        if count > 0:
+            articles = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
+        result_list = [ArticlePageItemResult.model_validate(article) for article in articles]
+
+        return ApiPageResult.success(param.page, param.page_size, count, result_list)
+
+    async def update_status(self, param: ArticleUpdateStatusParam,user:User)->bool:
+        article = await Article.get_or_none(pk=param.id,is_deleted=False,user=user)
+        if not article:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+        if article.status==param.status:
+            return True
+
+        article.status = param.status
+        article.update_at = datetime.now()
+        await article.save(update_fields=["status", "update_at"])
+        # 更新缓存
+        await self.article_cache_service.update_article_by_id(param.id)
+        return True
+
+```
 
 
 
 ### 1.23 引入 loguru 日志 
+
++ 安装`loguru`
+
+```bash
+uv add loguru
+
+pip install loguru
+```
+
++ 使用
+
+```python
+```
 
 
 
@@ -2421,6 +2762,8 @@ async def page_list(param:Annotated[ArticlePageParam,Query()],
 10. [Aerich ](https://github.com/tortoise/aerich/blob/dev/README.md)
 
 11. [Aerich Migration](https://tortoise.github.io/migration.html)
+
+11. [**Loguru** 文档](https://loguru.readthedocs.io/en/stable/)
 
     
 
