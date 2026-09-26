@@ -21,7 +21,7 @@ async def page_latest_articles(param: Annotated[BasePageParam, Query()],
 async def page_list(param:Annotated[ArticlePageParam,Query()],
                     article_service: Annotated[ArticleService, Depends(deps.get_article_service)]):
     return await article_service.page_list(param)
-# 获取文章
+# 获取文章详细内容
 @router.get("/{article_id}", response_model=ApiResult[ArticleDetailResult])
 async def get_by_id(article_id: Annotated[int, Path()],
                     article_service: Annotated[ArticleService, Depends(deps.get_article_service)]):

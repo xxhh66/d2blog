@@ -1691,29 +1691,694 @@ async def create(param: ArticleUpdateStatusParam,
 
 
 
-
-
 ### 1.16 C 端首页最新文章查询接口
 
++ 注入依赖`app/core/deps.py`
 
+```python
+def get_article_service() -> ArticleService:
+    return ArticleService()
+```
+
++ 文章Pydantic模型位置修改
+
+```python
+from app.schemas.admin.articles import ArticleCreateParam, ArticleUpdateParam, ArticlePageParam, ArticlePageItemResult, ArticleUpdateStatusPa
+
+
+from app.schemas.admin.categories import CategoryCreateParam,CategoryUpdateParam,CategoryPageParam,CategoryPageItemResult
+
+from app.schemas.admin.tags import TagCreateParam, TagUpdateParam, TagPageParam, TagPageItemResult
+```
+
++ 新增文章路由`app/routers/articles.py`
+
+```python
+from typing import Annotated,List
+from fastapi import APIRouter, Depends, Query
+from app.schemas.articles import ArticlePageItemResult
+from app.schemas.common import BasePageParam,ApiPageResult
+from app.services.articles import ArticleService
+from app.core import deps
+
+
+router = APIRouter(prefix="/articles", tags=['文章相关接口'])
+@router.get("/latest", response_model=ApiPageResult[List[ArticlePageItemResult]])
+async def page_latest_articles(param: Annotated[BasePageParam, Query()],
+                               article_service: Annotated[ArticleService, Depends(deps.get_article_service)]):
+    """
+    分页查询文章
+    """
+
+    return await article_service.page_latest_articles(param)
+```
+
++ 新增模型`app/schemas/admin/articles.py`
+
+```python
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+from app.core.enums import ArticleStatusEnum
+from app.schemas.admin.categories import CategoryUpdateParam
+from app.schemas.admin.tags import TagUpdateParam
+
+
+class ArticleCreateParam(BaseModel):
+    category_id:int =Field(...,description="分类ID")
+    tag_ids:list[int] |None = Field(default=[],description="标签ID列表")
+
+    title:str = Field(...,description="文章标题",max_length=128)
+    intro:str = Field(...,description="文章摘要",max_length=256)
+    content:str = Field(...,description="文章内容",max_length=10000)
+
+    seo_title:str|None = Field(default=None,description="文章SEO标题",max_length=256)
+    seo_keywords:str|None = Field(default=None,description="文章SEO关键词",max_length=256)
+    seo_description:str|None = Field(default=None,description="文章SEO描述",max_length=512)
+
+class ArticleUpdateParam(ArticleCreateParam):
+    id:int = Field(...,description="文章ID")
+
+class ArticlePageParam(BaseModel):
+    page:int = Field(1,description="页码")
+    page_size:int = Field(10,description="每页页数")
+
+    title:str|None = Field(default=None,description="文章标题")
+    category_id:int|None= Field(default=None,description="分类ID")
+    tag_ids:int|None = Field(default=None,description="标签ID列表")
+
+class ArticlePageItemResult(BaseModel):
+    id: int = Field(..., description="文章ID")
+    title: str = Field(..., description="文章标题", max_length=128)
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+    category: CategoryUpdateParam = Field(..., description="分类")
+    tags: list[TagUpdateParam] | None = Field(default=[], description="标签列表")
+    status: ArticleStatusEnum = Field(..., description="文章状态")
+
+    class Config:
+        from_attributes = True
+class ArticleUpdateStatusParam(BaseModel):
+    id:int = Field(..., description="文章ID")
+    status:ArticleStatusEnum = Field(...,description="文章状态")
+```
+
++ 修改Pydantic 模型`app/schemas/articles.py`
+
+```python
+class CategoryParam(BaseModel):
+    id:int= Field(...,description="分类ID")
+    name:str=Field(...,description="分类名称",max_length=64)
+    class Config:
+        from_attributes = True
+
+class TagParam(BaseModel):
+    id: int = Field(..., description="标签ID")
+    name: str = Field(..., description="标签名称", max_length=64)
+
+    class Config:
+        from_attributes = True
+```
+
++ 增加文章服务`app/services/articles.py`
+
+```python
+import asyncio
+from lib2to3.fixes.fix_print import parend_expr
+
+from tortoise import Model
+from app.core.caches import latest_articles_cache
+from typing import List
+from app.core.enums import ArticleStatusEnum
+from app.models import Article
+from app.schemas.common import BasePageParam, ApiPageResult
+from app.schemas.articles import ArticlePageItemResult
+
+LATEST_ARTICLES_LOCK = asyncio.Lock()
+
+class ArticleService:
+    async def page_latest_articles(self, param: BasePageParam) -> ApiPageResult[List[ArticlePageItemResult]]:
+        # 先从缓存中获取
+        cache_key = f'latest:{param.page}:{param.page_size}'
+        result = latest_articles_cache.get(cache_key)
+
+        if result:
+            return result
+
+        async with LATEST_ARTICLES_LOCK:
+            result = latest_articles_cache.get(cache_key)
+            if result:
+                return result
+            # 缓存中没有, 从db中获取
+            queryset = Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED).prefetch_related('category', 'tags').order_by('-id')
+            count = await queryset.count()
+            articles = []
+            if count > 0:
+                articles = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
+            result_list = [ArticlePageItemResult.model_validate(article) for article in articles]
+
+            # 将结果放入缓存
+            result = ApiPageResult.success(param.page, param.page_size, count, result_list)
+            latest_articles_cache.set(cache_key,result)
+
+        return result
+```
 
 ### 1.17 C 端首页标签统计接口 
+
++ 注入依赖`app/core/deps.py`
+
+```python
+def get_tag_service()->TagService:
+    return TagService()
+```
+
++ 增加缓存`app/core/caches.py`
+
+```python
+verify_code_cache = CommonCache(maxsize=1024, ttl=60 * 3)
+latest_articles_cache = CommonCache(maxsize=100, ttl=60 * 30)
+stat_cache = CommonCache(maxsize=10, ttl=60 * 5)
+```
+
++ 增加标签服务`app/services/tags.py`
+
+```python
+import asyncio
+
+from tortoise.expressions import Q
+from tortoise.functions import Count
+
+from app.core.caches import stat_cache
+from app.core.enums import ArticleStatusEnum
+from app.models import Tag
+from app.schemas.tags import TagStatResult
+
+
+TAG_STAT_LOCK = asyncio.Lock()
+
+class TagService:
+
+    async def stat_tags(self) -> list[TagStatResult]:
+        # 先从缓存中获取
+        cache_key = "tag_stat"
+        result = stat_cache.get(cache_key)
+        if result:
+            return result
+
+        async with TAG_STAT_LOCK:
+            result = stat_cache.get(cache_key)
+            if result:
+                return result
+
+            # 从db中获取
+            queryset = Tag.filter(is_deleted=False)
+            queryset = queryset.annotate(published_article_count=
+                                         Count("articles",
+                                               _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+                                                         articles__is_deleted=False)))
+            # 并进行排序
+            queryset = queryset.filter(published_article_count__gt=0).order_by("-published_article_count")
+            tags = await queryset.values("id", "name", "published_article_count")
+
+            result =  [TagStatResult.model_validate(tag) for tag in tags]
+
+            # 将结果存入缓存
+            stat_cache.set(cache_key, result)
+            return result
+```
+
++ 增加标签路由`app/routers/tags.py`
+
+```python
+from typing import Annotated, List
+
+from fastapi import APIRouter, Depends
+
+from app.core import deps
+from app.schemas.common import ApiResult
+from app.schemas.tags import TagStatResult
+from app.services.tags import TagService
+
+router = APIRouter(prefix="/tags", tags=["标签接口"])
+
+
+@router.get("/stat", response_model=ApiResult[List[TagStatResult]], description="统计标签")
+async def stat_tags(tag_service: Annotated[TagService, Depends(deps.get_tag_service)]):
+    return ApiResult.success(await tag_service.stat_tags())
+```
 
 
 
 ### 1.18 C 端首页分类统计接口
 
-###  
++ 注入依赖`app/core/deps.py`
+
+```python
+def get_category_service() -> CategoryService:
+    return CategoryService()
+```
+
++ 增加缓存`app/core/caches.py`
+
+```python
+category_stat_cache = CommonCache(maxsize=1, ttl=60 * 5)
+```
+
++ 增加分类服务`app/services/categories.py`
+
+```python
+class CategoryService:
+
+    async def stat_categories(self) -> list[CategoryStatResult]:    
+        # 从db中获取
+        categories = await (Category.filter(is_deleted=False).order_by('-id')
+                            .annotate(published_article_count=
+                                      Count("articles",
+                                            _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+                                                      articles__is_deleted=False)))
+                            .filter(published_article_count__gt=0)
+                            .values("id", "name", "published_article_count"))
+        result_list =  [CategoryStatResult.model_validate(category) for category in categories]
+        return result_list
+```
+
++ 增加分类统计路由`app/routers/categories.py`
+
+```python
+from typing import Annotated, List
+
+from fastapi import APIRouter, Depends
+
+from app.core import deps
+from app.schemas.categories import CategoryStatResult
+from app.schemas.common import ApiResult
+from app.services.categories import CategoryService
+
+router = APIRouter(prefix="/categories", tags=["分类接口"])
+
+@router.get("/stat", response_model=ApiResult[List[CategoryStatResult]], description="分类统计接口")
+async def stat_categories(category_service: Annotated[CategoryService, Depends(deps.get_category_service)]):
+    return ApiResult.success(await category_service.stat_categories())
+```
+
++ 路由挂载主函数上
+
+```python
+"""FastAPI 应用入口。
+
+该文件负责创建应用实例、注册数据库和路由，并暴露最基础的健康检查接口。
+"""
+import logging
+
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from tortoise.contrib.fastapi import register_tortoise
+
+from app.core import config, exceptions
+from app.routers import auth, routers_deps, admin, tags
+from app.routers import articles
+from app.routers import categories
+
+logging.basicConfig(level=logging.DEBUG)
+# 创建应用实例，后续所有路由和中间件都挂载在此对象上。
+myapp = FastAPI()
+
+# 初始化 Tortoise ORM，并绑定到当前 FastAPI 应用。
+register_tortoise(myapp, config=config.TORTOISE_ORM, generate_schemas=False)
+
+# 引入认证相关路由，统一加上 /api 前缀。
+myapp.include_router(auth.router, prefix="/api")
+myapp.include_router(routers_deps.router, prefix="/router_deps")
+myapp.include_router(categories.router, prefix="/api")
+myapp.include_router(tags.router, prefix="/api")
+myapp.include_router(articles.router, prefix="/api")
+myapp.include_router(admin.admin_router,prefix="/api")
+
+# 注册异常
+myapp.add_exception_handler(exceptions.BlogException, exceptions.blog_exception_handler) # type: ignore
+myapp.add_exception_handler(RequestValidationError, exceptions.validation_exception_handler) # type: ignore
+myapp.add_exception_handler(Exception, exceptions.global_exception_handler)
+
+
+@myapp.get("/")
+async def root():
+    """提供最简单的健康检查接口，供开发阶段快速验证服务状态。"""
+    return {"hello": "world"}
+```
 
 ### 1.19 缓存代码优化 
 
++ 新增缓存函数`app/core/caches.py`
 
+```python
+async def cache_with_lock(cache_key:str, cache_obj:CommonCache, lock_obj: asyncio.Lock,func:callable):
+    result = cache_obj.get(cache_key)
+    if result:
+        return result
+
+    async with lock_obj:
+        result = cache_obj.get(cache_key)
+        if result:
+            return result
+
+        result = await func()
+        cache_obj.set(cache_key, result)
+        return result
+    
+    
+# 验证码缓存：最多保存 100 个验证码记录，3 分钟自动过期。
+verify_code_cache = CommonCache(maxsize=1024, ttl=60 * 3)
+```
+
++ 修改分类服务`app/services/categories.py`
+
+```python
+class CategoryService:
+
+    async def stat_categories(self) -> list[CategoryStatResult]:
+        cache_key = "category_stat"
+        async def _fetch_from_db():
+            # 从db中获取
+            categories = await (Category.filter(is_deleted=False).order_by('-id')
+                                .annotate(published_article_count=
+                                          Count("articles",
+                                                _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+                                                          articles__is_deleted=False)))
+                                .filter(published_article_count__gt=0)
+                                .values("id", "name", "published_article_count"))
+            return [CategoryStatResult.model_validate(category) for category in categories]
+
+        return await cache_with_lock(cache_key,stat_cache,CATEGORY_STAT_LOCK,_fetch_from_db)
+```
+
++ 修改标签服务`app/services/tags.py`
+
+```python
+TAG_STAT_LOCK = asyncio.Lock()
+
+    async def stat_tags(self) -> list[TagStatResult]:
+        # 先从缓存中获取
+        cache_key = "tag_stat"
+
+        async def _fetch_from_db():
+            # 从db中获取
+            queryset = Tag.filter(is_deleted=False)
+            queryset = queryset.annotate(published_article_count=
+                                         Count("articles",
+                                               _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+                                                         articles__is_deleted=False)))
+            # 并进行排序
+            queryset = queryset.filter(published_article_count__gt=0).order_by("-published_article_count")
+            tags = await queryset.values("id", "name", "published_article_count")
+
+            result =  [TagStatResult.model_validate(tag) for tag in tags]
+            return result
+        return await cache_with_lock(cache_key, stat_cache, TAG_STAT_LOCK, _fetch_from_db)
+```
 
 ### 1.20  C 端文章详情接口与缓存穿透问题 
 
+#### 1.20.1 文章详情接口
 
++ 增加页面查询服务 `app/services/articles.py`
+
+```python
+    async def get_by_id(self,article_id:int)->ArticleDetailResult:
+        article_lock_key = f'article:{article_id}'
+        article_lock = article_lock_cache.get(article_lock_key)
+        if not article_lock:
+            async with  ARTICLE_GLOBAL_LOCK:
+                article_lock = article_lock_cache.get(article_lock_key)
+                if not article_lock:
+                    article_lock = asyncio.Lock()
+                    article_lock_cache.set(article_lock_key,article_lock)
+        async def _fetch_from_db():
+            _article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
+                              .select_related("category", "user"))   # ← 关键：预加载外键
+            if not _article:
+                raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+            return ArticleDetailResult.model_validate(_article)
+        return await cache_with_lock(f"{article_id}",article_cache,article_lock,_fetch_from_db)
+```
+
++ 增加文章Pydantic 模型 `app/schemas/articles.py`
+
+```python
+class ArticleDetailResult(BaseModel):
+    id: int = Field(..., description="文章ID")
+    title: str = Field(..., description="文章标题", max_length=128)
+    content: str = Field(..., description="文章内容", max_length=10000)
+    view_count: int = Field(..., description="文章浏览量")
+
+    seo_title: str = Field(description="SEO标题")
+    seo_keywords: str = Field(description="SEO关键字")
+    seo_description: str = Field(description="SEO描述")
+
+    category: CategoryParam = Field(..., description="分类")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+
+    class Config:
+        from_attributes = True
+```
+
++ 增加文章查询路由`app/routers/articles.py`
+
+```python
+# 获取文章详细内容
+@router.get("/{article_id}", response_model=ApiResult[ArticleDetailResult])
+async def get_by_id(article_id: Annotated[int, Path()],
+                    article_service: Annotated[ArticleService, Depends(deps.get_article_service)]):
+    return ApiResult.success(await article_service.get_by_id(article_id))
+```
+
++ 增加缓存`LRUCache` `app/core/caches.py`
+
+```python
+class CommonLRUCache(Generic[T]):
+    def __init__(self, maxsize: int):
+        self.cache = LRUCache(maxsize=maxsize)
+
+    def get(self, key: str) -> T | None:
+        return self.cache.get(key)
+
+    def set(self, key: str, value: T):
+        self.cache[key] = value
+
+    def delete(self, key: str):
+        self.cache.pop(key, None)
+```
+
+#### 1.20.2 缓存穿透问题
+
++ 修改标签服务`TagService` 中`app/services/tags.py`
+
+```python
+class TagService:
+    # V2 版本
+    async def stat_tags(self) -> list[TagStatResult]:
+        # 先从缓存中获取
+        cache_key = "tag_stat"
+
+        async def _fetch_from_db():
+            # 从db中获取
+            queryset = Tag.filter(is_deleted=False)
+            queryset = queryset.annotate(published_article_count=
+                                         Count("articles",
+                                               _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+                                                         articles__is_deleted=False)))
+            # 并进行排序
+            queryset = queryset.filter(published_article_count__gt=0).order_by("-published_article_count")
+            tags = await queryset.values("id", "name", "published_article_count")
+
+            result =  [TagStatResult.model_validate(tag) for tag in tags]
+            return result
+        return await cache_with_lock(cache_key, stat_cache, TAG_STAT_LOCK, _fetch_from_db)
+
+
+    # V1 版本
+    # async def stat_tags(self) -> list[TagStatResult]:
+    #     # 先从缓存中获取
+    #     cache_key = "tag_stat"
+    #     result = stat_cache.get(cache_key)
+    #     if result:
+    #         return result
+    #
+    #     async with TAG_STAT_LOCK:
+    #         result = stat_cache.get(cache_key)
+    #         if result:
+    #             return result
+    #
+    #         # 从db中获取
+    #         queryset = Tag.filter(is_deleted=False)
+    #         queryset = queryset.annotate(published_article_count=
+    #                                      Count("articles",
+    #                                            _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+    #                                                      articles__is_deleted=False)))
+    #         # 并进行排序
+    #         queryset = queryset.filter(published_article_count__gt=0).order_by("-published_article_count")
+    #         tags = await queryset.values("id", "name", "published_article_count")
+    #
+    #         result =  [TagStatResult.model_validate(tag) for tag in tags]
+    #
+    #         # 将结果存入缓存
+    #         stat_cache.set(cache_key, result)
+    #         return result
+    #     # return await load_cache_with_lock(cache_key, stat_cache, TAG_STAT_LOCK, _fetch_from_db)
+```
+
+
+
++ 修改标签服务`CategoryService` :`app/services/categories.py`
+
+```python
+class CategoryService:
+
+    async def stat_categories(self) -> list[CategoryStatResult]:
+        # V3 版本3
+        cache_key = "category_stat"
+        async def _fetch_from_db():
+            # 从db中获取
+            categories = await (Category.filter(is_deleted=False).order_by('-id')
+                                .annotate(published_article_count=
+                                          Count("articles",
+                                                _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+                                                          articles__is_deleted=False)))
+                                .filter(published_article_count__gt=0)
+                                .values("id", "name", "published_article_count"))
+            return [CategoryStatResult.model_validate(category) for category in categories]
+
+        return await cache_with_lock(cache_key,stat_cache,CATEGORY_STAT_LOCK,_fetch_from_db)
+
+
+
+        # 版本2
+        # cache_key = "category_stat"
+        # result = category_stat_cache.get(cache_key)
+        # if result:
+        #     return result
+        # async with CATEGORY_STAT_LOCK:
+        #     result = category_stat_cache.get(cache_key)
+        #     if result:
+        #         return result
+        #
+        #     # 从db中获取
+        #     categories = await (Category.filter(is_deleted=False).order_by('-id')
+        #                         .annotate(published_article_count=
+        #                                   Count("articles",
+        #                                         _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+        #                                                   articles__is_deleted=False)))
+        #                         .filter(published_article_count__gt=0)
+        #                         .values("id", "name", "published_article_count"))
+        #     result =  [CategoryStatResult.model_validate(category) for category in categories]
+        #
+        #     category_stat_cache.set(cache_key, result)
+        #
+        #     return result
+
+
+        # 版本1
+        # # 先从缓存中获取
+        # cache_key = "category_stat"
+        # result = stat_cache.get(cache_key)
+        # if result:
+        #     return result
+
+        # async def CATEGORY_STAT_LOCK():
+        #     result = stat_cache.get(cache_key)
+        #     if result:
+        #         return result
+        #     # 从db中获取
+        #     categories = await (Category.filter(is_deleted=False).order_by('-id')
+        #                         .annotate(published_article_count=
+        #                                   Count("articles",
+        #                                         _filter=Q(articles__status=ArticleStatusEnum.PUBLISHED,
+        #                                                   articles__is_deleted=False)))
+        #                         .filter(published_article_count__gt=0)
+        #                         .values("id", "name", "published_article_count"))
+        #     return [CategoryStatResult.model_validate(category) for category in categories]
+        # # 放入缓存
+        # stat_cache.set(cache_key,result)
+        # return result
+```
+
+
+
++ `app/core/caches.py`
+
+```python
+async def cache_with_lock(cache_key:str, cache_obj:CommonCache, lock_obj: asyncio.Lock,func:callable):
+    result = cache_obj.get(cache_key)
+    if result:
+        return result
+
+    async with lock_obj:
+        result = cache_obj.get(cache_key)
+        if result:
+            return result
+
+        result = await func()
+        cache_obj.set(cache_key, result)
+        return result
+
+
+# 验证码缓存：最多保存 100 个验证码记录，3 分钟自动过期。
+verify_code_cache = CommonCache(maxsize=1024, ttl=60 * 3)
+latest_articles_cache = CommonCache(maxsize=100, ttl=60 * 30)
+category_stat_cache = CommonCache(maxsize=1, ttl=60 * 5)
+stat_cache = CommonCache(maxsize=10, ttl=60 * 5)
+article_cache = CommonCache(maxsize=1000, ttl=60 * 5)
+
+# 文章详情锁缓存
+article_lock_cache = CommonLRUCache(maxsize=1000)
+article_page_cache = CommonCache(maxsize=1000, ttl=60 * 5)
+article_view_count_cache = CommonLRUCache(maxsize=1000)
+```
 
 ### 1.21  C 端文章查询接口 
+
++ 增加页面查询服务 `app/services/articles.py`
+
+```python
+    async def page_list(self,param:ArticlePageParam)->ApiPageResult[List[ArticlePageItemResult]]:
+        queryset = Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED).prefetch_related('category',
+                                                                                                         'tags').order_by(
+            '-id')
+        if param.category_id:
+            queryset = queryset.filter(category__id=param.category_id)
+        if param.tag_id:
+            queryset = queryset.filter(tags__id=param.tag_id)
+        if param.title:
+            queryset = queryset.filter(title__contains=param.title)
+        count = await queryset.count()
+
+        articles = []
+        if count>0:
+            articles = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
+        result_list = [ArticlePageItemResult.model_validate(article) for article in articles]
+        return ApiPageResult.success(param.page, param.page_size, count, result_list)
+```
+
++ 增加文章Pydantic 模型 `app/schemas/articles.py`
+
+```python
+class ArticlePageParam(BasePageParam):
+    category_id:int |None = Field(default=None,description="分类ID")
+    tag_id:int | None=Field(default=None,description="标签ID")
+    title:str | None = Field(default=None,description="文章标题")
+```
+
++ 增加文章查询路由`app/routers/articles.py`
+
+```python
+# 查找、筛选
+@router.get("/page_list")
+async def page_list(param:Annotated[ArticlePageParam,Query()],
+                    article_service: Annotated[ArticleService, Depends(deps.get_article_service)]):
+    return await article_service.page_list(param)
+```
 
 
 
