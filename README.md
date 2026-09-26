@@ -2727,11 +2727,98 @@ pip install loguru
 + 使用
 
 ```python
+logger.add("file_1.log", rotation="500 MB")    # Automatically rotate too big file
+logger.add("file_2.log", rotation="12:00")     # New file is created each day at noon
+logger.add("file_3.log", rotation="1 week")    # Once the file is too old, it's rotated
+
+logger.add("file_X.log", retention="10 days")  # Cleanup after some time
+
+logger.add("file_Y.log", compression="zip")    # Save some loved space
 ```
 
 
 
 ### 1.24 文章访问次数接口与异步后台任务 
+
++ 新增`app/core/lifespans.py`
+
+```python
+import asyncio
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from loguru import logger
+
+from app.tasks import articles
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    task = asyncio.create_task(articles.article_view_count_refresh_task())
+    yield
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+```
+
++ 主函数修改`main.py`
+
+```python
+myapp = FastAPI(lifespan=lifespans.lifespan)
+```
+
++ 增加文章任务文件`app/tasks/articles.py`
+
+```python
+import asyncio
+
+from loguru import logger
+from tortoise.expressions import F
+
+from app.core.caches import article_view_count_cache
+from app.models import Article
+
+
+async def article_view_count_refresh_task():
+    while True:
+        await asyncio.sleep(30)
+        logger.info("刷新文章浏览量缓存")
+        try:
+
+            for article_id in list(article_view_count_cache.cache.keys()):
+                view_count = article_view_count_cache.get(article_id)
+                if view_count and view_count > 0:
+                    logger.info(f"刷新文章浏览量缓存, article_id: {article_id}, view_count: {view_count}")
+                    await Article.filter(pk=article_id, is_deleted=False).update(view_count=F('view_count') + view_count)
+                    # 清除缓存
+                    article_view_count_cache.delete(article_id)
+        except Exception as e:
+            logger.exception(e)
+```
+
++ 修改文章服务，在服务中增加刷新次数`app/services/articles.py`
+
+```python
+    async def get_by_id(self,article_id:int)->ArticleDetailResult:
+        article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
+                         .prefetch_related('category', 'user'))
+        if not article:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+
+        # 记录访问次数到缓存
+        view_count = article_view_count_cache.get(article_id)
+        if not view_count:
+            view_count = 0
+        view_count = view_count + 1
+        # logger.info(f"article_id: {article_id}, view_count: {view_count}")
+        article_view_count_cache.set(article_id, view_count)
+
+        return ArticleDetailResult.model_validate(article)
+```
 
 
 
