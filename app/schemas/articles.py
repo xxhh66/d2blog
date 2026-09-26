@@ -51,3 +51,21 @@ class ArticlePageParam(BasePageParam):
     category_id:int |None = Field(default=None,description="分类ID")
     tag_id:int | None=Field(default=None,description="标签ID")
     title:str | None = Field(default=None,description="文章标题")
+
+class ArticlePydantic(BaseModel):
+    id: int = Field(..., description="文章ID")
+    title: str = Field(..., description="文章标题", max_length=128)
+    intro: str = Field(..., description="文章摘要", max_length=256)
+    status: int = Field(..., description="文章状态 0-未发布 1-已发布")
+    content: str = Field(..., description="文章内容", max_length=10000)
+    seo_title: str = Field(description="SEO标题")
+    seo_keywords: str = Field(description="SEO关键字")
+    seo_description: str = Field(description="SEO描述")
+    view_count: int = Field(..., description="文章浏览量")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+    category: CategoryParam = Field(..., description="分类")
+    tags: list[TagParam] | None = Field(default=[], description="标签列表")
+
+    class Config:
+        from_attributes = True

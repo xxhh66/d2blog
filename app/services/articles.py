@@ -2,6 +2,8 @@ import asyncio
 from lib2to3.fixes.fix_print import parend_expr
 
 from tortoise import Model
+
+from app.cache.articles import ArticleCacheService
 from app.core.caches import latest_articles_cache, article_lock_cache,cache_with_lock,article_cache
 from typing import List
 from app.core.enums import ArticleStatusEnum, BlogErrorEnum
@@ -14,8 +16,11 @@ LATEST_ARTICLES_LOCK = asyncio.Lock()
 ARTICLE_GLOBAL_LOCK = asyncio.Lock()
 
 class ArticleService:
+    def __init__(self,article_cache_service:ArticleCacheService):
+        self.article_cache_service = article_cache_service
+
     async def page_latest_articles(self, param: BasePageParam) -> ApiPageResult[List[ArticlePageItemResult]]:
-        # 先从缓存中获取
+        # 先从缓存中获取,但会存在如果页码不一样，会在多个地方进行缓存，导致重复缓存，如果数据进行更新， 没办法处理
         cache_key = f'latest:{param.page}:{param.page_size}'
         result = latest_articles_cache.get(cache_key)
 
@@ -40,23 +45,29 @@ class ArticleService:
 
         return result
 
-    async def get_by_id(self,article_id:int)->ArticleDetailResult:
-        article_lock_key = f'article:{article_id}'
-        article_lock = article_lock_cache.get(article_lock_key)
-        if not article_lock:
-            async with  ARTICLE_GLOBAL_LOCK:
-                article_lock = article_lock_cache.get(article_lock_key)
-                if not article_lock:
-                    article_lock = asyncio.Lock()
-                    article_lock_cache.set(article_lock_key,article_lock)
-        async def _fetch_from_db():
-            _article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
-                              .select_related("category", "user"))   # ← 关键：预加载外键
-            if not _article:
-                raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
-            return ArticleDetailResult.model_validate(_article)
-        return await cache_with_lock(f"{article_id}",article_cache,article_lock,_fetch_from_db)
+    # async def get_by_id(self,article_id:int)->ArticleDetailResult:
+    #     article_lock_key = f'article:{article_id}'
+    #     article_lock = article_lock_cache.get(article_lock_key)
+    #     if not article_lock:
+    #         async with  ARTICLE_GLOBAL_LOCK:
+    #             article_lock = article_lock_cache.get(article_lock_key)
+    #             if not article_lock:
+    #                 article_lock = asyncio.Lock()
+    #                 article_lock_cache.set(article_lock_key,article_lock)
+    #     async def _fetch_from_db():
+    #         _article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
+    #                           .select_related("category", "user"))   # ← 关键：预加载外键
+    #         if not _article:
+    #             raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+    #         return ArticleDetailResult.model_validate(_article)
+    #     return await cache_with_lock(f"{article_id}",article_cache,article_lock,_fetch_from_db)
 
+    async def get_by_id(self,article_id:int)->ArticleDetailResult:
+        article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
+                         .prefetch_related('category', 'user'))
+        if not article:
+            raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+        return ArticleDetailResult.model_validate(article)
 
     async def page_list(self,param:ArticlePageParam)->ApiPageResult[List[ArticlePageItemResult]]:
         queryset = Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED).prefetch_related('category',

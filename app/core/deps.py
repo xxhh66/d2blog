@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import HTTPException
 from fastapi.params import Header, Depends
 
+from app.cache.articles import ArticleCacheService
 from app.services.auth import AuthService
 from app.models import User
 from app.utils import jwt_util
@@ -19,6 +20,7 @@ from app.services.articles import ArticleService
 from app.services.tags import TagService
 from app.services.categories import CategoryService
 
+
 def get_category_admin_service() -> CategoryAdminService:
     return CategoryAdminService()
 
@@ -27,9 +29,14 @@ def get_tag_admin_service() -> TagAdminService:
 
 def get_article_admin_service() -> ArticleAdminService:
     return ArticleAdminService()
+def get_article_cache_service() -> ArticleCacheService:
+    return ArticleCacheService()
 
-def get_article_service() -> ArticleService:
-    return ArticleService()
+def get_article_service(article_cache_service: Annotated[ArticleCacheService, Depends(get_article_cache_service)]) -> ArticleService:
+    return ArticleService(article_cache_service)
+#
+# def get_article_service() -> ArticleService:
+#     return ArticleService()
 
 def get_category_service() -> CategoryService:
     return CategoryService()
