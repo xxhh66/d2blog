@@ -3,7 +3,7 @@ from typing import List
 from app.core.caches import load_cache, article_cache, article_page_cache
 from app.core.enums import ArticleStatusEnum
 from app.models import Article
-from app.schemas.admin.articles import ArticlePageItemResult
+from app.schemas.articles import ArticlePageItemResult
 from app.schemas.articles import ArticlePydantic
 from app.schemas.common import ApiPageResult
 
@@ -14,12 +14,23 @@ class ArticleCacheService:
         article_cache_key = f"article_{article_id}"
         async def _fetch_from_db():
             _article = await (Article.get_or_none(pk=article_id,is_deleted=False,status=ArticleStatusEnum.PUBLISHED)
-                              .prefetch_related("category", "user"))
+                              .prefetch_related('category', 'tags'))
             if not _article:
                 return None
             return ArticlePydantic.model_validate(_article).model_dump()
 
         return await load_cache(article_cache_key,article_cache,_fetch_from_db)
+
+    async def update_article_by_id(self, article_id: int):
+        article_cache_key = f'article_{article_id}'
+        article = await Article.get_or_none(pk=article_id, is_deleted=False).prefetch_related('category', 'tags')
+        if not article:
+            return
+        article_cache.set(article_cache_key, ArticlePydantic.model_validate(article).model_dump())
+
+    async def delete_article_by_id(self, article_id: int):
+        article_cache_key = f'article_{article_id}'
+        article_cache.delete(article_cache_key)
 
     async def page_list(self,cache_key:str,page:int,page_size:int)->ApiPageResult[List[ArticlePageItemResult]]:
         result = article_page_cache.get(cache_key)
@@ -36,5 +47,8 @@ class ArticleCacheService:
                     result_list.append(ArticlePageItemResult.model_validate(article))
         return ApiPageResult.success(page,page_size,count,result_list)
 
-    async def page_list_set(self, cache_key, data:dict):
-        article_page_cache.set(cache_key, data)
+    async def page_list_set(self, cache_key, count:int,ids:List[int]):
+        article_page_cache.set(cache_key, {
+            'count': count,
+            'ids': ids
+        })

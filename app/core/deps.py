@@ -12,8 +12,6 @@ from app.services.auth import AuthService
 from app.models import User
 from app.utils import jwt_util
 from app.services.admin.categories import CategoryAdminService
-from app.core.enums import BlogErrorEnum
-from app.core.exceptions import BlogException
 from app.services.admin.tags import TagAdminService
 from app.services.admin.articles import ArticleAdminService
 from app.services.articles import ArticleService
@@ -21,16 +19,17 @@ from app.services.tags import TagService
 from app.services.categories import CategoryService
 
 
+def get_article_cache_service() -> ArticleCacheService:
+    return ArticleCacheService()
+
 def get_category_admin_service() -> CategoryAdminService:
     return CategoryAdminService()
 
 def get_tag_admin_service() -> TagAdminService:
     return TagAdminService()
 
-def get_article_admin_service() -> ArticleAdminService:
-    return ArticleAdminService()
-def get_article_cache_service() -> ArticleCacheService:
-    return ArticleCacheService()
+def get_article_admin_service(article_cache_service: Annotated[ArticleCacheService, Depends(get_article_cache_service)]) -> ArticleAdminService:
+    return ArticleAdminService(article_cache_service)
 
 def get_article_service(article_cache_service: Annotated[ArticleCacheService, Depends(get_article_cache_service)]) -> ArticleService:
     return ArticleService(article_cache_service)

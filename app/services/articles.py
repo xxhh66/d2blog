@@ -67,10 +67,7 @@ class ArticleService:
 
         result = ApiPageResult.success(param.page, param.page_size, count, result_list)
         # 将结果放入缓存
-        await self.article_cache_service.page_list_set(cache_key,{
-            'count':count,
-            'ids':ids,
-        })
+        await self.article_cache_service.page_list_set(cache_key, count, ids)
 
         return result
     # async def get_by_id(self,article_id:int)->ArticleDetailResult:
@@ -97,10 +94,37 @@ class ArticleService:
             raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
         return ArticleDetailResult.model_validate(article)
 
+    # async def page_list(self,param:ArticlePageParam)->ApiPageResult[List[ArticlePageItemResult]]:
+    #     queryset = Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED).prefetch_related('category',
+    #                                                                                                      'tags').order_by(
+    #         '-id')
+    #     if param.category_id:
+    #         queryset = queryset.filter(category__id=param.category_id)
+    #     if param.tag_id:
+    #         queryset = queryset.filter(tags__id=param.tag_id)
+    #     if param.title:
+    #         queryset = queryset.filter(title__contains=param.title)
+    #     count = await queryset.count()
+    #
+    #     articles = []
+    #     if count>0:
+    #         articles = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
+    #     result_list = [ArticlePageItemResult.model_validate(article) for article in articles]
+    #     return ApiPageResult.success(param.page, param.page_size, count, result_list)
+
+
     async def page_list(self,param:ArticlePageParam)->ApiPageResult[List[ArticlePageItemResult]]:
-        queryset = Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED).prefetch_related('category',
-                                                                                                         'tags').order_by(
-            '-id')
+        # 先从缓存中获取
+        cache_key = f'page:{param.page}:{param.page_size}:{param.title}:{param.tag_id}:{param.category_id}'
+        result = await self.article_cache_service.page_list(cache_key,param.page,param.page_size)
+
+        if result:
+            return result
+
+
+        queryset = (Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED)
+                                                            .prefetch_related('category','tags')
+                                                            .order_by('-id'))
         if param.category_id:
             queryset = queryset.filter(category__id=param.category_id)
         if param.tag_id:
@@ -113,4 +137,9 @@ class ArticleService:
         if count>0:
             articles = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
         result_list = [ArticlePageItemResult.model_validate(article) for article in articles]
+
+        ids = [article.id for article in articles]
+        # 将结果放入缓存
+        await self.article_cache_service.page_list_set(cache_key,count,ids)
+
         return ApiPageResult.success(param.page, param.page_size, count, result_list)
