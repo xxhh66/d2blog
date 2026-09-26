@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from tortoise.contrib.fastapi import register_tortoise
 
-from app.core import config, exceptions
+from app.core import config, exceptions,lifespans
 from app.routers import auth, routers_deps, admin, tags
 from app.routers import articles
 from app.routers import categories
@@ -16,7 +16,7 @@ from app.routers import categories
 # logging.basicConfig(level=logging.DEBUG)
 logger.add("logs/app.log",rotation="10 MB",retention=5,level="INFO")
 # 创建应用实例，后续所有路由和中间件都挂载在此对象上。
-myapp = FastAPI()
+myapp = FastAPI(lifespan=lifespans.lifespan)
 
 # 初始化 Tortoise ORM，并绑定到当前 FastAPI 应用。
 register_tortoise(myapp, config=config.TORTOISE_ORM, generate_schemas=False)

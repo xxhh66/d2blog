@@ -1,10 +1,12 @@
 import asyncio
 from lib2to3.fixes.fix_print import parend_expr
+from venv import logger
 
 from tortoise import Model
 
 from app.cache.articles import ArticleCacheService
-from app.core.caches import latest_articles_cache, article_lock_cache,cache_with_lock,article_cache
+from app.core.caches import latest_articles_cache, article_lock_cache, cache_with_lock, article_cache, \
+    article_view_count_cache
 from typing import List
 from app.core.enums import ArticleStatusEnum, BlogErrorEnum
 from app.core.exceptions import BlogException
@@ -92,6 +94,15 @@ class ArticleService:
                          .prefetch_related('category', 'user'))
         if not article:
             raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
+
+        # 记录访问次数到缓存
+        view_count = article_view_count_cache.get(article_id)
+        if not view_count:
+            view_count = 0
+        view_count = view_count + 1
+        # logger.info(f"article_id: {article_id}, view_count: {view_count}")
+        article_view_count_cache.set(article_id, view_count)
+
         return ArticleDetailResult.model_validate(article)
 
     # async def page_list(self,param:ArticlePageParam)->ApiPageResult[List[ArticlePageItemResult]]:
