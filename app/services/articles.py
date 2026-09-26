@@ -8,7 +8,8 @@ from app.core.enums import ArticleStatusEnum, BlogErrorEnum
 from app.core.exceptions import BlogException
 from app.models import Article
 from app.schemas.common import BasePageParam, ApiPageResult
-from app.schemas.articles import ArticlePageItemResult,ArticleDetailResult
+from app.schemas.articles import ArticlePageItemResult, ArticleDetailResult, ArticlePageParam
+
 LATEST_ARTICLES_LOCK = asyncio.Lock()
 ARTICLE_GLOBAL_LOCK = asyncio.Lock()
 
@@ -55,3 +56,22 @@ class ArticleService:
                 raise BlogException(BlogErrorEnum.ARTICLE_NOT_FOUND)
             return ArticleDetailResult.model_validate(_article)
         return await cache_with_lock(f"{article_id}",article_cache,article_lock,_fetch_from_db)
+
+
+    async def page_list(self,param:ArticlePageParam)->ApiPageResult[List[ArticlePageItemResult]]:
+        queryset = Article.filter(is_deleted=False, status=ArticleStatusEnum.PUBLISHED).prefetch_related('category',
+                                                                                                         'tags').order_by(
+            '-id')
+        if param.category_id:
+            queryset = queryset.filter(category__id=param.category_id)
+        if param.tag_id:
+            queryset = queryset.filter(tags__id=param.tag_id)
+        if param.title:
+            queryset = queryset.filter(title__contains=param.title)
+        count = await queryset.count()
+
+        articles = []
+        if count>0:
+            articles = await queryset.offset((param.page - 1) * param.page_size).limit(param.page_size).all()
+        result_list = [ArticlePageItemResult.model_validate(article) for article in articles]
+        return ApiPageResult.success(param.page, param.page_size, count, result_list)

@@ -1,6 +1,8 @@
 from datetime import datetime
 from pydantic import BaseModel,Field
 
+from app.schemas.common import BasePageParam
+
 
 class CategoryParam(BaseModel):
     id:int= Field(...,description="分类ID")
@@ -44,3 +46,8 @@ class ArticleDetailResult(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ArticlePageParam(BasePageParam):
+    category_id:int |None = Field(default=None,description="分类ID")
+    tag_id:int | None=Field(default=None,description="标签ID")
+    title:str | None = Field(default=None,description="文章标题")

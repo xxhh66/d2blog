@@ -1,6 +1,6 @@
 from typing import Annotated,List
 from fastapi import APIRouter, Depends, Query,Path
-from app.schemas.articles import ArticlePageItemResult, ArticleDetailResult
+from app.schemas.articles import ArticlePageItemResult, ArticleDetailResult, ArticlePageParam
 from app.schemas.common import BasePageParam,ApiResult,ApiPageResult
 from app.services.articles import ArticleService
 from app.core import deps
@@ -16,6 +16,11 @@ async def page_latest_articles(param: Annotated[BasePageParam, Query()],
 
     return await article_service.page_latest_articles(param)
 
+# 查找、筛选
+@router.get("/page_list")
+async def page_list(param:Annotated[ArticlePageParam,Query()],
+                    article_service: Annotated[ArticleService, Depends(deps.get_article_service)]):
+    return await article_service.page_list(param)
 # 获取文章
 @router.get("/{article_id}", response_model=ApiResult[ArticleDetailResult])
 async def get_by_id(article_id: Annotated[int, Path()],
